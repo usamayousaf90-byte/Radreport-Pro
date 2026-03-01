@@ -2580,8 +2580,8 @@ const T = {
 };
 
 /* ══════════════════════════════════
-   AI CALL — online with Anthropic key,
-   offline fallback when key/network fails
+   AI CALL — uses Vercel serverless /api/ai
+   with offline fallback if API unavailable
 ══════════════════════════════════ */
 function sentenceCase(s) {
   var t = (s || "").trim().replace(/\s+/g, " ");
@@ -2589,23 +2589,6 @@ function sentenceCase(s) {
   t = t.charAt(0).toUpperCase() + t.slice(1);
   if (!/[.!?]$/.test(t)) t += ".";
   return t;
-}
-
-function tryGetApiKey() {
-  var key = "";
-  try { key = localStorage.getItem("ANTHROPIC_API_KEY") || ""; } catch(e) {}
-  if (!key && typeof window !== "undefined" && window.ANTHROPIC_API_KEY) {
-    key = String(window.ANTHROPIC_API_KEY);
-  }
-  if (!key && typeof window !== "undefined" && !window.__radreportPromptedForKey) {
-    window.__radreportPromptedForKey = true;
-    var entered = window.prompt("Enter your Anthropic API key to enable online AI (leave blank for offline mode):", "");
-    if (entered && entered.trim()) {
-      key = entered.trim();
-      try { localStorage.setItem("ANTHROPIC_API_KEY", key); } catch(e) {}
-    }
-  }
-  return key;
 }
 
 function offlineAiFallback(usr) {
@@ -2645,22 +2628,13 @@ function offlineAiFallback(usr) {
 
 async function aiCall(sys, usr, attempt) {
   if (attempt === undefined) attempt = 0;
-  var apiKey = tryGetApiKey();
-  if (!apiKey) {
-    return { ok: true, text: offlineAiFallback(usr), offline: true, error: "Missing Anthropic API key" };
-  }
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch("/api/ai", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true"
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
         system: sys,
         messages: [{ role: "user", content: usr }]
       })
@@ -2674,7 +2648,7 @@ async function aiCall(sys, usr, attempt) {
       throw new Error((body.error && body.error.message) || ("HTTP " + res.status));
     }
     const d = await res.json();
-    const text = (d.content || []).map(function(b) { return b.text || ""; }).join("").trim();
+    const text = String(d.text || "").trim();
     if (!text) throw new Error("Empty response");
     return { ok: true, text: text, offline: false };
   } catch(e) {
