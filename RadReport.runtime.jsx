@@ -3435,13 +3435,28 @@ function RadReport() {
   var lbl = {fontSize:11,fontWeight:700,color:C.soft,textTransform:"uppercase",letterSpacing:.9,marginBottom:4,display:"block"};
   var pg  = {maxWidth:860,margin:"0 auto",padding:"28px 20px 60px"};
   var q = templateQuery.trim().toLowerCase();
-  var modalityEntries = Object.entries(T).filter(function(entry) {
-    if (!q) return true;
-    var name = entry[0];
-    var cfg = entry[1];
-    var hay = (name + " " + cfg.regions.join(" ")).toLowerCase();
-    return hay.indexOf(q) !== -1;
-  });
+  var modalityEntries = Object.entries(T);
+  var templateEntries = [];
+  if (q) {
+    modalityEntries.forEach(function(entry) {
+      var mName = entry[0];
+      var cfg = entry[1];
+      cfg.regions.forEach(function(r) {
+        var sectionNames = (cfg.sections[r] || []).map(function(s) { return s.label; }).join(" ");
+        var hay = (mName + " " + r + " " + sectionNames).toLowerCase();
+        if (hay.indexOf(q) !== -1) {
+          templateEntries.push({
+            modality: mName,
+            region: r,
+            color: cfg.color,
+            accent: cfg.accent,
+            icon: cfg.icon,
+            sections: (cfg.sections[r] || []).length
+          });
+        }
+      });
+    });
+  }
   var regionList = tpl ? tpl.regions.filter(function(r){ return !q || r.toLowerCase().indexOf(q) !== -1; }) : [];
   var draftQ = draftQuery.trim().toLowerCase();
   var filteredDrafts = savedReports.filter(function(d) {
@@ -3673,7 +3688,7 @@ function RadReport() {
         {/* Section header */}
         <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:12,animation:"fadeUp .6s ease .7s both"}}>
           <div style={{height:1,flex:1,background:"linear-gradient(90deg,rgba(56,189,248,.2),rgba(56,189,248,.05))"}}/>
-          <span style={{fontSize:11,color:"rgba(56,189,248,.5)",letterSpacing:"3px",textTransform:"uppercase",fontWeight:700,flexShrink:0}}>Choose Your Modality</span>
+          <span style={{fontSize:11,color:"rgba(56,189,248,.5)",letterSpacing:"3px",textTransform:"uppercase",fontWeight:700,flexShrink:0}}>{q ? "Template Search Results" : "Choose Your Modality"}</span>
           <div style={{height:1,flex:1,background:"linear-gradient(90deg,rgba(56,189,248,.05),rgba(56,189,248,.2))"}}/>
         </div>
         <div style={{marginBottom:20,animation:"fadeUp .6s ease .72s both"}}>
@@ -3682,7 +3697,35 @@ function RadReport() {
 
         {/* 4-column card grid */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:14}}>
-          {modalityEntries.map(function(entry, idx) {
+          {q ? templateEntries.map(function(tplResult, idx) {
+            return (
+              <div key={tplResult.modality+"__"+tplResult.region} className="mc"
+                style={{
+                  borderRadius:16,overflow:"hidden",
+                  background:"linear-gradient(160deg,rgba(255,255,255,.06) 0%,rgba(255,255,255,.02) 100%)",
+                  border:"1px solid rgba(255,255,255,.09)",
+                  padding:0,
+                  animation:"fadeUp .45s ease "+(0.15+idx*0.04)+"s both"
+                }}
+                onClick={function(){ setModality(tplResult.modality); setRegion(tplResult.region); setStep("patient"); }}>
+                <div style={{background:"linear-gradient(135deg,"+tplResult.color+"50 0%,"+tplResult.accent+"35 100%)",padding:"14px 16px",borderBottom:"1px solid "+tplResult.color+"30"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:20}}>{tplResult.icon}</span>
+                    <div>
+                      <div style={{fontSize:12,fontWeight:800,color:"#fff",letterSpacing:".6px"}}>{tplResult.modality}</div>
+                      <div style={{fontSize:11,color:"rgba(255,255,255,.8)"}}>Template</div>
+                    </div>
+                  </div>
+                </div>
+                <div style={{padding:"14px 16px"}}>
+                  <div style={{fontSize:14,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:8}}>{tplResult.region}</div>
+                  <div style={{display:"inline-flex",fontSize:10,padding:"3px 9px",borderRadius:20,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",color:"rgba(255,255,255,.65)"}}>
+                    {tplResult.sections} sections
+                  </div>
+                </div>
+              </div>
+            );
+          }) : modalityEntries.map(function(entry, idx) {
             var name = entry[0], t = entry[1];
             var meta = {
               "Ultrasound": { desc:"Real-time soft tissue & organ imaging", wave:"sound", detail:"Abdomen · Pelvis · Vascular" },
@@ -3760,9 +3803,9 @@ function RadReport() {
               </div>
             );
           })}
-          {!modalityEntries.length && (
+          {q && !templateEntries.length && (
             <div style={{gridColumn:"1/-1",padding:"24px 20px",borderRadius:12,background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"rgba(255,255,255,.65)"}}>
-              No modalities match your search.
+              No templates match your search.
             </div>
           )}
         </div>
