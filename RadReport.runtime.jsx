@@ -2778,154 +2778,6 @@ function DictationTip({ fieldLabel, onDone, inputRef }) {
     }
   }, []);
 
-  var canFinalize = !!(authUser && (authUser.role === "Admin" || authUser.role === "Radiologist"));
-  var canDeleteDraft = canFinalize;
-
-  var persistAllDrafts = useCallback(async function(next) {
-    if (!authUser || !authUser.username) return;
-    saveLocalDrafts(authUser.username, next);
-    setSyncingDrafts(true);
-    try {
-      await cloudSaveDrafts(authUser.username, next);
-      showToast("☁️ Drafts synced", "success");
-    } catch (e) {
-      showToast("Cloud sync unavailable, saved locally", "info");
-    } finally {
-      setSyncingDrafts(false);
-    }
-  }, [authUser, showToast]);
-
-  useEffect(function() {
-    if (!authUser || !authUser.username) return;
-    var local = loadLocalDrafts(authUser.username);
-    setSavedReports(local);
-    (async function() {
-      try {
-        var cloud = await cloudLoadDrafts(authUser.username);
-        if (Array.isArray(cloud) && cloud.length) {
-          setSavedReports(cloud);
-          saveLocalDrafts(authUser.username, cloud);
-          showToast("☁️ Cloud drafts loaded", "success");
-        }
-      } catch (e) {
-        if (!local.length) showToast("Cloud drafts unavailable, using local storage", "info");
-      }
-    })();
-  }, [authUser, showToast]);
-
-  var doLogin = useCallback(function() {
-    var uname = (loginForm.username || "").trim().toLowerCase();
-    var pass = loginForm.password || "";
-    var found = users.find(function(u) { return u.username.toLowerCase() === uname && u.password === pass; });
-    if (!found) {
-      showToast("Invalid username or password", "error");
-      return;
-    }
-    var session = { username: found.username, role: found.role };
-    setAuthUser(session);
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    setStep("home");
-    showToast("Welcome, " + found.role, "success");
-  }, [loginForm, users, showToast]);
-
-  var doLogout = useCallback(function() {
-    localStorage.removeItem(SESSION_KEY);
-    setAuthUser(null);
-    setSavedReports([]);
-    setActiveDraftId(null);
-    setStep("login");
-  }, []);
-
-  var saveDraft = useCallback(function(name) {
-    if (!authUser) return;
-    var label = (name || "").trim() || ((patient.name || "Untitled") + " " + (new Date().toLocaleDateString()));
-    var now = new Date().toISOString();
-    var snapshot = {
-      id: activeDraftId || ("draft_" + Date.now()),
-      label: label,
-      savedAt: now,
-      modality: modality,
-      region: region,
-      patient: patient,
-      findings: findings,
-      tags: tags,
-      impression: impression,
-      recommendation: recommendation,
-      urgency: urgency,
-      updatedBy: authUser.username,
-      versions: []
-    };
-    setSavedReports(function(prev) {
-      var next = prev.slice();
-      var idx = next.findIndex(function(d) { return d.id === snapshot.id; });
-      if (idx >= 0) {
-        var existing = next[idx];
-        var history = (existing.versions || []).slice();
-        history.unshift({
-          savedAt: existing.savedAt,
-          findings: existing.findings,
-          tags: existing.tags,
-          impression: existing.impression,
-          recommendation: existing.recommendation,
-          urgency: existing.urgency
-        });
-        snapshot.versions = history.slice(0, 20);
-        next[idx] = snapshot;
-      } else {
-        next.unshift(snapshot);
-      }
-      persistAllDrafts(next);
-      return next;
-    });
-    setActiveDraftId(snapshot.id);
-    showToast("💾 Draft saved", "success");
-  }, [authUser, activeDraftId, patient, modality, region, findings, tags, impression, recommendation, urgency, persistAllDrafts, showToast]);
-
-  var loadDraft = useCallback(function(draft) {
-    setActiveDraftId(draft.id);
-    setModality(draft.modality || null);
-    setRegion(draft.region || null);
-    setPatient(draft.patient || {name:"",age:"",sex:"Male",refBy:"",clinicalInfo:"",studyDate:new Date().toISOString().split("T")[0],reportingDoc:"",institution:""});
-    setFindings(draft.findings || {});
-    setTags(draft.tags || {});
-    setImpression(draft.impression || "");
-    setRec(draft.recommendation || "");
-    setUrgency(draft.urgency || "Routine");
-    setStep("template");
-    showToast("📂 Draft loaded", "success");
-  }, [showToast]);
-
-  var restoreVersion = useCallback(function(draft, ver) {
-    if (!draft || !ver) return;
-    var restored = Object.assign({}, draft, {
-      savedAt: new Date().toISOString(),
-      findings: ver.findings || {},
-      tags: ver.tags || {},
-      impression: ver.impression || "",
-      recommendation: ver.recommendation || "",
-      urgency: ver.urgency || "Routine"
-    });
-    setSavedReports(function(prev) {
-      var next = prev.map(function(d) { return d.id === restored.id ? restored : d; });
-      persistAllDrafts(next);
-      return next;
-    });
-    showToast("⏪ Version restored", "success");
-  }, [persistAllDrafts, showToast]);
-
-  var removeDraft = useCallback(function(id) {
-    if (!canDeleteDraft) {
-      showToast("Only Admin/Radiologist can delete drafts", "error");
-      return;
-    }
-    setSavedReports(function(prev) {
-      var next = prev.filter(function(d) { return d.id !== id; });
-      persistAllDrafts(next);
-      return next;
-    });
-    if (activeDraftId === id) setActiveDraftId(null);
-  }, [canDeleteDraft, persistAllDrafts, activeDraftId, showToast]);
-
   return (
     <div style={{margin:"6px 0 10px",padding:"12px 16px",background:"#FFF7ED",border:"2px solid #FB923C",borderRadius:10,fontFamily:"'DM Sans',sans-serif",animation:"slideUp .2s ease"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
@@ -3179,6 +3031,154 @@ function RadReport() {
     setToast({ msg: msg, type: type || "info" });
     setTimeout(function(){ setToast(null); }, 5000);
   }, []);
+
+  var canFinalize = !!(authUser && (authUser.role === "Admin" || authUser.role === "Radiologist"));
+  var canDeleteDraft = canFinalize;
+
+  var persistAllDrafts = useCallback(async function(next) {
+    if (!authUser || !authUser.username) return;
+    saveLocalDrafts(authUser.username, next);
+    setSyncingDrafts(true);
+    try {
+      await cloudSaveDrafts(authUser.username, next);
+      showToast("☁️ Drafts synced", "success");
+    } catch (e) {
+      showToast("Cloud sync unavailable, saved locally", "info");
+    } finally {
+      setSyncingDrafts(false);
+    }
+  }, [authUser, showToast]);
+
+  useEffect(function() {
+    if (!authUser || !authUser.username) return;
+    var local = loadLocalDrafts(authUser.username);
+    setSavedReports(local);
+    (async function() {
+      try {
+        var cloud = await cloudLoadDrafts(authUser.username);
+        if (Array.isArray(cloud) && cloud.length) {
+          setSavedReports(cloud);
+          saveLocalDrafts(authUser.username, cloud);
+          showToast("☁️ Cloud drafts loaded", "success");
+        }
+      } catch (e) {
+        if (!local.length) showToast("Cloud drafts unavailable, using local storage", "info");
+      }
+    })();
+  }, [authUser, showToast]);
+
+  var doLogin = useCallback(function() {
+    var uname = (loginForm.username || "").trim().toLowerCase();
+    var pass = loginForm.password || "";
+    var found = users.find(function(u) { return u.username.toLowerCase() === uname && u.password === pass; });
+    if (!found) {
+      showToast("Invalid username or password", "error");
+      return;
+    }
+    var session = { username: found.username, role: found.role };
+    setAuthUser(session);
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    setStep("home");
+    showToast("Welcome, " + found.role, "success");
+  }, [loginForm, users, showToast]);
+
+  var doLogout = useCallback(function() {
+    localStorage.removeItem(SESSION_KEY);
+    setAuthUser(null);
+    setSavedReports([]);
+    setActiveDraftId(null);
+    setStep("login");
+  }, []);
+
+  var saveDraft = useCallback(function(name) {
+    if (!authUser) return;
+    var label = (name || "").trim() || ((patient.name || "Untitled") + " " + (new Date().toLocaleDateString()));
+    var now = new Date().toISOString();
+    var snapshot = {
+      id: activeDraftId || ("draft_" + Date.now()),
+      label: label,
+      savedAt: now,
+      modality: modality,
+      region: region,
+      patient: patient,
+      findings: findings,
+      tags: tags,
+      impression: impression,
+      recommendation: recommendation,
+      urgency: urgency,
+      updatedBy: authUser.username,
+      versions: []
+    };
+    setSavedReports(function(prev) {
+      var next = prev.slice();
+      var idx = next.findIndex(function(d) { return d.id === snapshot.id; });
+      if (idx >= 0) {
+        var existing = next[idx];
+        var history = (existing.versions || []).slice();
+        history.unshift({
+          savedAt: existing.savedAt,
+          findings: existing.findings,
+          tags: existing.tags,
+          impression: existing.impression,
+          recommendation: existing.recommendation,
+          urgency: existing.urgency
+        });
+        snapshot.versions = history.slice(0, 20);
+        next[idx] = snapshot;
+      } else {
+        next.unshift(snapshot);
+      }
+      persistAllDrafts(next);
+      return next;
+    });
+    setActiveDraftId(snapshot.id);
+    showToast("💾 Draft saved", "success");
+  }, [authUser, activeDraftId, patient, modality, region, findings, tags, impression, recommendation, urgency, persistAllDrafts, showToast]);
+
+  var loadDraft = useCallback(function(draft) {
+    setActiveDraftId(draft.id);
+    setModality(draft.modality || null);
+    setRegion(draft.region || null);
+    setPatient(draft.patient || {name:"",age:"",sex:"Male",refBy:"",clinicalInfo:"",studyDate:new Date().toISOString().split("T")[0],reportingDoc:"",institution:""});
+    setFindings(draft.findings || {});
+    setTags(draft.tags || {});
+    setImpression(draft.impression || "");
+    setRec(draft.recommendation || "");
+    setUrgency(draft.urgency || "Routine");
+    setStep("template");
+    showToast("📂 Draft loaded", "success");
+  }, [showToast]);
+
+  var restoreVersion = useCallback(function(draft, ver) {
+    if (!draft || !ver) return;
+    var restored = Object.assign({}, draft, {
+      savedAt: new Date().toISOString(),
+      findings: ver.findings || {},
+      tags: ver.tags || {},
+      impression: ver.impression || "",
+      recommendation: ver.recommendation || "",
+      urgency: ver.urgency || "Routine"
+    });
+    setSavedReports(function(prev) {
+      var next = prev.map(function(d) { return d.id === restored.id ? restored : d; });
+      persistAllDrafts(next);
+      return next;
+    });
+    showToast("⏪ Version restored", "success");
+  }, [persistAllDrafts, showToast]);
+
+  var removeDraft = useCallback(function(id) {
+    if (!canDeleteDraft) {
+      showToast("Only Admin/Radiologist can delete drafts", "error");
+      return;
+    }
+    setSavedReports(function(prev) {
+      var next = prev.filter(function(d) { return d.id !== id; });
+      persistAllDrafts(next);
+      return next;
+    });
+    if (activeDraftId === id) setActiveDraftId(null);
+  }, [canDeleteDraft, persistAllDrafts, activeDraftId, showToast]);
 
   useEffect(function() {
     seedUsers();
