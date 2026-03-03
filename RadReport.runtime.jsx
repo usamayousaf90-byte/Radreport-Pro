@@ -2778,6 +2778,154 @@ function DictationTip({ fieldLabel, onDone, inputRef }) {
     }
   }, []);
 
+  var canFinalize = !!(authUser && (authUser.role === "Admin" || authUser.role === "Radiologist"));
+  var canDeleteDraft = canFinalize;
+
+  var persistAllDrafts = useCallback(async function(next) {
+    if (!authUser || !authUser.username) return;
+    saveLocalDrafts(authUser.username, next);
+    setSyncingDrafts(true);
+    try {
+      await cloudSaveDrafts(authUser.username, next);
+      showToast("☁️ Drafts synced", "success");
+    } catch (e) {
+      showToast("Cloud sync unavailable, saved locally", "info");
+    } finally {
+      setSyncingDrafts(false);
+    }
+  }, [authUser, showToast]);
+
+  useEffect(function() {
+    if (!authUser || !authUser.username) return;
+    var local = loadLocalDrafts(authUser.username);
+    setSavedReports(local);
+    (async function() {
+      try {
+        var cloud = await cloudLoadDrafts(authUser.username);
+        if (Array.isArray(cloud) && cloud.length) {
+          setSavedReports(cloud);
+          saveLocalDrafts(authUser.username, cloud);
+          showToast("☁️ Cloud drafts loaded", "success");
+        }
+      } catch (e) {
+        if (!local.length) showToast("Cloud drafts unavailable, using local storage", "info");
+      }
+    })();
+  }, [authUser, showToast]);
+
+  var doLogin = useCallback(function() {
+    var uname = (loginForm.username || "").trim().toLowerCase();
+    var pass = loginForm.password || "";
+    var found = users.find(function(u) { return u.username.toLowerCase() === uname && u.password === pass; });
+    if (!found) {
+      showToast("Invalid username or password", "error");
+      return;
+    }
+    var session = { username: found.username, role: found.role };
+    setAuthUser(session);
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    setStep("home");
+    showToast("Welcome, " + found.role, "success");
+  }, [loginForm, users, showToast]);
+
+  var doLogout = useCallback(function() {
+    localStorage.removeItem(SESSION_KEY);
+    setAuthUser(null);
+    setSavedReports([]);
+    setActiveDraftId(null);
+    setStep("login");
+  }, []);
+
+  var saveDraft = useCallback(function(name) {
+    if (!authUser) return;
+    var label = (name || "").trim() || ((patient.name || "Untitled") + " " + (new Date().toLocaleDateString()));
+    var now = new Date().toISOString();
+    var snapshot = {
+      id: activeDraftId || ("draft_" + Date.now()),
+      label: label,
+      savedAt: now,
+      modality: modality,
+      region: region,
+      patient: patient,
+      findings: findings,
+      tags: tags,
+      impression: impression,
+      recommendation: recommendation,
+      urgency: urgency,
+      updatedBy: authUser.username,
+      versions: []
+    };
+    setSavedReports(function(prev) {
+      var next = prev.slice();
+      var idx = next.findIndex(function(d) { return d.id === snapshot.id; });
+      if (idx >= 0) {
+        var existing = next[idx];
+        var history = (existing.versions || []).slice();
+        history.unshift({
+          savedAt: existing.savedAt,
+          findings: existing.findings,
+          tags: existing.tags,
+          impression: existing.impression,
+          recommendation: existing.recommendation,
+          urgency: existing.urgency
+        });
+        snapshot.versions = history.slice(0, 20);
+        next[idx] = snapshot;
+      } else {
+        next.unshift(snapshot);
+      }
+      persistAllDrafts(next);
+      return next;
+    });
+    setActiveDraftId(snapshot.id);
+    showToast("💾 Draft saved", "success");
+  }, [authUser, activeDraftId, patient, modality, region, findings, tags, impression, recommendation, urgency, persistAllDrafts, showToast]);
+
+  var loadDraft = useCallback(function(draft) {
+    setActiveDraftId(draft.id);
+    setModality(draft.modality || null);
+    setRegion(draft.region || null);
+    setPatient(draft.patient || {name:"",age:"",sex:"Male",refBy:"",clinicalInfo:"",studyDate:new Date().toISOString().split("T")[0],reportingDoc:"",institution:""});
+    setFindings(draft.findings || {});
+    setTags(draft.tags || {});
+    setImpression(draft.impression || "");
+    setRec(draft.recommendation || "");
+    setUrgency(draft.urgency || "Routine");
+    setStep("template");
+    showToast("📂 Draft loaded", "success");
+  }, [showToast]);
+
+  var restoreVersion = useCallback(function(draft, ver) {
+    if (!draft || !ver) return;
+    var restored = Object.assign({}, draft, {
+      savedAt: new Date().toISOString(),
+      findings: ver.findings || {},
+      tags: ver.tags || {},
+      impression: ver.impression || "",
+      recommendation: ver.recommendation || "",
+      urgency: ver.urgency || "Routine"
+    });
+    setSavedReports(function(prev) {
+      var next = prev.map(function(d) { return d.id === restored.id ? restored : d; });
+      persistAllDrafts(next);
+      return next;
+    });
+    showToast("⏪ Version restored", "success");
+  }, [persistAllDrafts, showToast]);
+
+  var removeDraft = useCallback(function(id) {
+    if (!canDeleteDraft) {
+      showToast("Only Admin/Radiologist can delete drafts", "error");
+      return;
+    }
+    setSavedReports(function(prev) {
+      var next = prev.filter(function(d) { return d.id !== id; });
+      persistAllDrafts(next);
+      return next;
+    });
+    if (activeDraftId === id) setActiveDraftId(null);
+  }, [canDeleteDraft, persistAllDrafts, activeDraftId, showToast]);
+
   return (
     <div style={{margin:"6px 0 10px",padding:"12px 16px",background:"#FFF7ED",border:"2px solid #FB923C",borderRadius:10,fontFamily:"'DM Sans',sans-serif",animation:"slideUp .2s ease"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
@@ -2951,11 +3099,62 @@ function FindingField({ sl, field, val, tag, aiLoading, isRec, isDictating, acti
   );
 }
 
+var USER_KEY = "rrp_users_v1";
+var SESSION_KEY = "rrp_session_v1";
+var LOCAL_DRAFT_PREFIX = "rrp_local_drafts_";
+
+function seedUsers() {
+  var defaults = [
+    { username: "admin", password: "admin123", role: "Admin" },
+    { username: "radiologist", password: "rad123", role: "Radiologist" },
+    { username: "resident", password: "res123", role: "Resident" },
+    { username: "typist", password: "type123", role: "Typist" }
+  ];
+  try {
+    var cur = JSON.parse(localStorage.getItem(USER_KEY) || "[]");
+    if (!Array.isArray(cur) || !cur.length) localStorage.setItem(USER_KEY, JSON.stringify(defaults));
+  } catch (e) {
+    localStorage.setItem(USER_KEY, JSON.stringify(defaults));
+  }
+}
+
+function loadUsers() {
+  try { return JSON.parse(localStorage.getItem(USER_KEY) || "[]"); } catch (e) { return []; }
+}
+
+function saveLocalDrafts(username, reports) {
+  try { localStorage.setItem(LOCAL_DRAFT_PREFIX + username, JSON.stringify(reports || [])); } catch (e) {}
+}
+
+function loadLocalDrafts(username) {
+  try {
+    var d = JSON.parse(localStorage.getItem(LOCAL_DRAFT_PREFIX + username) || "[]");
+    return Array.isArray(d) ? d : [];
+  } catch (e) { return []; }
+}
+
+async function cloudLoadDrafts(username) {
+  var res = await fetch("/api/drafts?user=" + encodeURIComponent(username), { method: "GET" });
+  var data = await res.json().catch(function() { return {}; });
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Cloud load failed");
+  return Array.isArray(data.reports) ? data.reports : [];
+}
+
+async function cloudSaveDrafts(username, reports) {
+  var res = await fetch("/api/drafts", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user: username, reports: reports })
+  });
+  var data = await res.json().catch(function() { return {}; });
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Cloud save failed");
+}
+
 /* ══════════════════════════════════
    MAIN APP
 ══════════════════════════════════ */
 function RadReport() {
-  var [step, setStep]               = useState("home");
+  var [step, setStep]               = useState("login");
   var [modality, setModality]       = useState(null);
   var [region, setRegion]           = useState(null);
   var [patient, setPatient]         = useState({name:"",age:"",sex:"Male",refBy:"",clinicalInfo:"",studyDate:new Date().toISOString().split("T")[0],reportingDoc:"",institution:""});
@@ -2966,12 +3165,32 @@ function RadReport() {
   var [urgency, setUrgency]         = useState("Routine");
   var [aiLoad, setAiLoad]           = useState({});
   var [toast, setToast]             = useState(null);
+  var [templateQuery, setTemplateQuery] = useState("");
+  var [savedReports, setSavedReports] = useState([]);
+  var [activeDraftId, setActiveDraftId] = useState(null);
+  var [syncingDrafts, setSyncingDrafts] = useState(false);
+  var [authUser, setAuthUser] = useState(null);
+  var [users, setUsers] = useState([]);
+  var [loginForm, setLoginForm] = useState({ username: "", password: "" });
   var printRef = useRef(null);
 
   /* ── helpers ── */
   var showToast = useCallback(function(msg, type) {
     setToast({ msg: msg, type: type || "info" });
     setTimeout(function(){ setToast(null); }, 5000);
+  }, []);
+
+  useEffect(function() {
+    seedUsers();
+    var all = loadUsers();
+    setUsers(all);
+    try {
+      var s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+      if (s && s.username && s.role) {
+        setAuthUser(s);
+        setStep("home");
+      }
+    } catch (e) {}
   }, []);
 
   var handleVoiceResult = useCallback(function(key, text) {
@@ -3079,6 +3298,7 @@ function RadReport() {
     setStep("home"); setModality(null); setRegion(null);
     setPatient({name:"",age:"",sex:"Male",refBy:"",clinicalInfo:"",studyDate:new Date().toISOString().split("T")[0],reportingDoc:"",institution:""});
     setFindings({}); setTags({}); setImpression(""); setRec(""); setUrgency("Routine"); setAiLoad({});
+    setActiveDraftId(null);
     try { voiceStop(); } catch(e) {}
   }, [voiceStop]);
 
@@ -3096,6 +3316,36 @@ function RadReport() {
   var cHd = function(c) { return {background:"linear-gradient(90deg,"+c+"18,transparent)",borderBottom:"2px solid "+c+"30",padding:"13px 20px",display:"flex",alignItems:"center",gap:10}; };
   var lbl = {fontSize:11,fontWeight:700,color:C.soft,textTransform:"uppercase",letterSpacing:.9,marginBottom:4,display:"block"};
   var pg  = {maxWidth:860,margin:"0 auto",padding:"28px 20px 60px"};
+  var q = templateQuery.trim().toLowerCase();
+  var modalityEntries = Object.entries(T).filter(function(entry) {
+    if (!q) return true;
+    var name = entry[0];
+    var cfg = entry[1];
+    var hay = (name + " " + cfg.regions.join(" ")).toLowerCase();
+    return hay.indexOf(q) !== -1;
+  });
+  var regionList = tpl ? tpl.regions.filter(function(r){ return !q || r.toLowerCase().indexOf(q) !== -1; }) : [];
+
+  if (step === "login") return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:"linear-gradient(140deg,#06101b,#0f2440)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <style>{CSS}</style>
+      <Toast msg={toast&&toast.msg} type={toast&&toast.type} onClose={function(){setToast(null);}} />
+      <div style={{width:"100%",maxWidth:460,background:"#fff",borderRadius:16,padding:24,boxShadow:"0 20px 50px rgba(0,0,0,.35)"}}>
+        <div style={{fontFamily:"'DM Serif Display',serif",fontSize:30,color:"#0D2137",marginBottom:8}}>RadReport Pro</div>
+        <div style={{fontSize:13,color:"#5A7090",marginBottom:18}}>Role-based access: Admin, Radiologist, Resident, Typist.</div>
+        <label style={lbl}>Username</label>
+        <input className="ri" style={inp({marginBottom:12})} value={loginForm.username} onChange={function(e){setLoginForm(function(p){ return Object.assign({}, p, { username: e.target.value }); });}} placeholder="e.g. radiologist" />
+        <label style={lbl}>Password</label>
+        <input type="password" className="ri" style={inp({marginBottom:14})} value={loginForm.password} onChange={function(e){setLoginForm(function(p){ return Object.assign({}, p, { password: e.target.value }); });}} placeholder="••••••••" />
+        <button style={btn("#0D2137")} onClick={doLogin}>Sign In</button>
+        <div style={{marginTop:12,fontSize:11,color:"#7a8ea8",lineHeight:1.7}}>
+          Default accounts:<br/>
+          <code>admin / admin123</code> · <code>radiologist / rad123</code><br/>
+          <code>resident / res123</code> · <code>typist / type123</code>
+        </div>
+      </div>
+    </div>
+  );
 
   /* ══ HOME — premium welcome ══ */
   if (step === "home") return (
@@ -3134,7 +3384,13 @@ function RadReport() {
         </div>
 
         {/* Status pills */}
-        <div style={{display:"flex",gap:8}}>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+          {authUser && (
+            <div style={{padding:"8px 12px",borderRadius:20,background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.12)",fontSize:11,color:"rgba(255,255,255,.7)"}}>
+              {authUser.username} · {authUser.role}
+            </div>
+          )}
+          <button style={obtn("rgba(255,255,255,.8)")} onClick={doLogout}>Logout</button>
           {[["#6366F1","#A5B4FC","AI ENGINE","ONLINE"],["#0F766E","#2DD4BF","VOICE","READY"]].map(function(p,i){return(
             <div key={i} style={{display:"flex",alignItems:"center",gap:7,padding:"8px 16px",borderRadius:24,background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)",backdropFilter:"blur(8px)"}}>
               <div style={{display:"flex",gap:3,alignItems:"center"}}>
@@ -3290,15 +3546,18 @@ function RadReport() {
       <div style={{position:"relative",zIndex:10,padding:"0 40px 100px"}}>
 
         {/* Section header */}
-        <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:28,animation:"fadeUp .6s ease .7s both"}}>
+        <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:12,animation:"fadeUp .6s ease .7s both"}}>
           <div style={{height:1,flex:1,background:"linear-gradient(90deg,rgba(56,189,248,.2),rgba(56,189,248,.05))"}}/>
           <span style={{fontSize:11,color:"rgba(56,189,248,.5)",letterSpacing:"3px",textTransform:"uppercase",fontWeight:700,flexShrink:0}}>Choose Your Modality</span>
           <div style={{height:1,flex:1,background:"linear-gradient(90deg,rgba(56,189,248,.05),rgba(56,189,248,.2))"}}/>
         </div>
+        <div style={{marginBottom:20,animation:"fadeUp .6s ease .72s both"}}>
+          <input className="ri" style={Object.assign({}, inp({background:"rgba(255,255,255,.08)",color:"#fff",border:"1px solid rgba(255,255,255,.15)"}), {maxWidth:420})} placeholder="Search templates, regions, modalities…" value={templateQuery} onChange={function(e){setTemplateQuery(e.target.value);}} />
+        </div>
 
         {/* 4-column card grid */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:14}}>
-          {Object.entries(T).map(function(entry, idx) {
+          {modalityEntries.map(function(entry, idx) {
             var name = entry[0], t = entry[1];
             var meta = {
               "Ultrasound": { desc:"Real-time soft tissue & organ imaging", wave:"sound", detail:"Abdomen · Pelvis · Vascular" },
@@ -3376,6 +3635,11 @@ function RadReport() {
               </div>
             );
           })}
+          {!modalityEntries.length && (
+            <div style={{gridColumn:"1/-1",padding:"24px 20px",borderRadius:12,background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"rgba(255,255,255,.65)"}}>
+              No modalities match your search.
+            </div>
+          )}
         </div>
       </div>
 
@@ -3429,8 +3693,11 @@ function RadReport() {
         <div style={{padding:"28px 0 20px"}}>
           <div style={{fontFamily:"'DM Serif Display',serif",fontSize:28,color:C.navy}}>{tpl.icon} {modality} — Select Region</div>
         </div>
+        <div style={{marginBottom:14}}>
+          <input className="ri" style={inp({maxWidth:420})} placeholder="Search regions…" value={templateQuery} onChange={function(e){setTemplateQuery(e.target.value);}} />
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))",gap:12}}>
-          {tpl.regions.map(function(r) {
+          {regionList.map(function(r) {
             return (
               <div key={r} className="hr" style={{"--hc":C.col,"--hbg":C.col+"08",background:C.sur,borderRadius:10,padding:"20px 16px",border:"2px solid "+C.bdr,textAlign:"center"}}
                 onClick={function(){ setRegion(r); setStep("patient"); }}>
@@ -3439,6 +3706,11 @@ function RadReport() {
               </div>
             );
           })}
+          {!regionList.length && (
+            <div style={{gridColumn:"1/-1",padding:"18px",border:"1px solid "+C.bdr,borderRadius:10,background:"#fff",color:C.soft}}>
+              No regions match your search.
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -3485,6 +3757,8 @@ function RadReport() {
       <AppHdr onBack backTo="patient" setStep={setStep} sub={modality+" › "+region+" › Findings"}
         right={<div style={{display:"flex",gap:10,alignItems:"center"}}>
           <span style={{fontSize:12,color:"rgba(255,255,255,.5)"}}>{patient.name}</span>
+          <button style={obtn("#fff")} onClick={function(){ setStep("drafts"); }}>Drafts</button>
+          <button style={obtn("#fff")} onClick={function(){ var nm = window.prompt("Draft name", patient.name || "Untitled draft"); if (nm !== null) saveDraft(nm); }}>Save Draft</button>
           <button style={btn(tpl.accent)} onClick={function(){setStep("impression");}}>Impression →</button>
         </div>}
       />
@@ -3569,7 +3843,11 @@ function RadReport() {
       <style>{CSS}</style>
       <Toast msg={toast&&toast.msg} type={toast&&toast.type} onClose={function(){setToast(null);}} />
       <AppHdr onBack backTo="template" setStep={setStep} sub="Impression & Recommendations"
-        right={<button style={btn(C.col)} onClick={function(){setStep("preview");}}>Preview Report →</button>}
+        right={<div style={{display:"flex",gap:10}}>
+          <button style={obtn("#fff")} onClick={function(){ setStep("drafts"); }}>Drafts</button>
+          <button style={obtn("#fff")} onClick={function(){ var nm = window.prompt("Draft name", patient.name || "Untitled draft"); if (nm !== null) saveDraft(nm); }}>Save Draft</button>
+          <button style={btn(C.col)} onClick={function(){setStep("preview");}}>Preview Report →</button>
+        </div>}
       />
       <div style={pg}>
         <div style={crd}>
@@ -3630,6 +3908,69 @@ function RadReport() {
     </div>
   );
 
+  if (step === "drafts") return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.bg,minHeight:"100vh"}}>
+      <style>{CSS}</style>
+      <Toast msg={toast&&toast.msg} type={toast&&toast.type} onClose={function(){setToast(null);}} />
+      <AppHdr onBack backTo={region ? "template" : "home"} setStep={setStep} sub="Draft Library"
+        right={<div style={{display:"flex",gap:10,alignItems:"center"}}>
+          <span style={{fontSize:12,color:"rgba(255,255,255,.6)"}}>{syncingDrafts ? "Syncing..." : "Cloud sync idle"}</span>
+          <button style={obtn("#fff")} onClick={function(){ persistAllDrafts(savedReports); }}>Sync Now</button>
+        </div>}
+      />
+      <div style={pg}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{fontFamily:"'DM Serif Display',serif",fontSize:28,color:C.navy}}>Saved Drafts</div>
+          <div style={{fontSize:12,color:C.soft}}>{savedReports.length} total</div>
+        </div>
+        {!savedReports.length && (
+          <div style={{background:"#fff",border:"1px solid "+C.bdr,borderRadius:12,padding:20,color:C.soft}}>
+            No drafts found. Save one from Findings, Impression, or Preview.
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:12}}>
+          {savedReports.map(function(draft) {
+            var mcol = (draft.modality && T[draft.modality] && T[draft.modality].color) || "#0077B6";
+            var versions = Array.isArray(draft.versions) ? draft.versions : [];
+            return (
+              <div key={draft.id} style={{background:"#fff",borderRadius:12,border:"1px solid "+C.bdr,overflow:"hidden"}}>
+                <div style={{height:4,background:"linear-gradient(90deg,"+mcol+","+mcol+"88)"}} />
+                <div style={{padding:16}}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+                    <div style={{fontWeight:700,color:C.navy}}>{draft.label}</div>
+                    <div style={{fontSize:11,color:C.soft}}>{new Date(draft.savedAt).toLocaleString()}</div>
+                  </div>
+                  <div style={{marginTop:6,display:"flex",gap:8,flexWrap:"wrap"}}>
+                    <span style={{fontSize:11,padding:"3px 9px",borderRadius:20,background:"#F0F4FF",color:"#334155"}}>{draft.modality || "—"}</span>
+                    <span style={{fontSize:11,padding:"3px 9px",borderRadius:20,background:"#F8FAFC",color:"#475569"}}>{draft.region || "—"}</span>
+                    <span style={{fontSize:11,padding:"3px 9px",borderRadius:20,background:"#FFF7ED",color:"#9A3412"}}>{versions.length} versions</span>
+                  </div>
+                  <div style={{display:"flex",gap:8,marginTop:12}}>
+                    <button style={btn(C.col, "#fff", {padding:"7px 12px"})} onClick={function(){ loadDraft(draft); }}>Open</button>
+                    <button style={obtn(C.err)} onClick={function(){ removeDraft(draft.id); }} disabled={!canDeleteDraft}>Delete</button>
+                  </div>
+                  {versions.length > 0 && (
+                    <div style={{marginTop:12,paddingTop:10,borderTop:"1px dashed "+C.bdr}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.soft,marginBottom:6}}>Version History</div>
+                      {versions.slice(0,3).map(function(v, idx) {
+                        return (
+                          <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:"#475569",marginBottom:4}}>
+                            <span>{new Date(v.savedAt).toLocaleString()}</span>
+                            <button style={obtn(C.ok)} onClick={function(){ restoreVersion(draft, v); }}>Restore</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
   /* ══ PREVIEW ══ */
   if (step === "preview") {
     var abnF = Object.entries(tags).filter(function(e){ return e[1]==="ab"; });
@@ -3639,7 +3980,12 @@ function RadReport() {
         <style>{CSS}</style>
         <AppHdr setStep={setStep} sub="Report Preview"
           right={<div style={{display:"flex",gap:10}}>
+            <button style={obtn("#fff")} onClick={function(){ setStep("drafts"); }}>Drafts</button>
+            <button style={obtn("#fff")} onClick={function(){ var nm = window.prompt("Draft name", patient.name || "Untitled draft"); if (nm !== null) saveDraft(nm); }}>Save Draft</button>
             <button style={obtn("#fff")} onClick={function(){window.print();}}>🖨️ Print / PDF</button>
+            <button style={btn(canFinalize ? C.ok : "#8CA3BF")} disabled={!canFinalize} onClick={function(){ if (canFinalize) showToast("✅ Report marked as finalized by " + authUser.role, "success"); }}>
+              Finalize
+            </button>
             <button style={btn(C.err)} onClick={reset}>🔄 New Report</button>
           </div>}
         />
