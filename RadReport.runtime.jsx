@@ -3002,6 +3002,260 @@ async function cloudSaveDrafts(username, reports) {
   if (!res.ok) throw new Error((data.error && data.error.message) || "Cloud save failed");
 }
 
+const SHORTCUTS = (function() {
+  var out = [];
+  function add(code, title, sectionKeywords, rules, fallback, modalities, regionKeywords, aliases, defaultTag) {
+    out.push({
+      code: code,
+      title: title,
+      sectionKeywords: sectionKeywords || [],
+      rules: rules || [],
+      fallback: fallback || "",
+      modalities: modalities || [],
+      regionKeywords: regionKeywords || [],
+      aliases: aliases || [],
+      defaultTag: defaultTag || "ab"
+    });
+  }
+
+  add("FL-1", "Fatty liver grade 1", ["liver"], [
+    { any: ["echogenicity", "echo"], value: "Mildly increased hepatic echogenicity consistent with grade 1 fatty infiltration.", tag: "ab" },
+    { any: ["size", "span"], value: "Liver is mildly enlarged.", tag: "ab" },
+    { any: ["surface", "margin"], value: "Liver surface is smooth.", tag: "n" }
+  ], "Mild fatty liver changes (grade 1).", ["Ultrasound", "CT Scan"], ["abdomen", "liver"], ["FATTY-1"]);
+  add("FL-2", "Fatty liver grade 2", ["liver"], [
+    { any: ["echogenicity", "echo"], value: "Moderately increased hepatic echogenicity consistent with grade 2 steatosis.", tag: "ab" },
+    { any: ["size", "span"], value: "Mild to moderate hepatomegaly.", tag: "ab" },
+    { any: ["portal", "vessel"], value: "Intrahepatic vascular margins are partially obscured.", tag: "ab" }
+  ], "Moderate fatty liver changes (grade 2).", ["Ultrasound", "CT Scan"], ["abdomen", "liver"]);
+  add("FL-3", "Fatty liver grade 3", ["liver"], [
+    { any: ["echogenicity", "echo"], value: "Markedly increased hepatic echogenicity consistent with grade 3 steatosis.", tag: "ab" },
+    { any: ["diaphragm", "deep"], value: "Poor deep beam penetration with posterior attenuation.", tag: "ab" },
+    { any: ["vessel", "portal"], value: "Hepatic vascular detail is markedly obscured.", tag: "ab" }
+  ], "Severe fatty liver changes (grade 3).", ["Ultrasound", "CT Scan"], ["abdomen", "liver"]);
+  add("CLD", "Chronic liver disease pattern", ["liver"], [
+    { any: ["echotexture", "parenchyma"], value: "Coarse heterogeneous hepatic echotexture.", tag: "ab" },
+    { any: ["surface", "margin"], value: "Irregular nodular hepatic surface contour.", tag: "ab" },
+    { any: ["size", "span"], value: "Liver size is reduced with chronic parenchymal disease morphology.", tag: "ab" }
+  ], "Features are in keeping with chronic liver disease.", ["Ultrasound", "CT Scan", "MRI"], ["abdomen", "liver"], ["CIRRHOSIS-PATTERN"]);
+  add("CIRR", "Cirrhotic liver", ["liver"], [
+    { any: ["surface", "margin"], value: "Nodular hepatic outline consistent with cirrhosis.", tag: "ab" },
+    { any: ["caudate", "ratio"], value: "Relative caudate lobe prominence noted.", tag: "ab" },
+    { any: ["echotexture", "parenchyma"], value: "Coarsened hepatic echotexture.", tag: "ab" }
+  ], "Cirrhotic liver morphology.", ["Ultrasound", "CT Scan", "MRI"], ["abdomen", "liver"]);
+  add("PHTN", "Portal hypertension", ["portal", "spleen", "ascites"], [
+    { any: ["portal", "vein"], value: "Main portal vein is prominent.", tag: "ab" },
+    { any: ["spleen", "splenic"], value: "Splenomegaly present.", tag: "ab" },
+    { any: ["ascites", "fluid"], value: "Mild ascites present.", tag: "ab" }
+  ], "Features suggest portal hypertension.", ["Ultrasound", "CT Scan"], ["abdomen", "liver"]);
+  add("HSM", "Hepatosplenomegaly", ["liver", "spleen"], [
+    { any: ["liver", "hepatic", "size"], value: "Liver is enlarged.", tag: "ab" },
+    { any: ["spleen", "splenic"], value: "Spleen is enlarged.", tag: "ab" }
+  ], "Hepatosplenomegaly.", ["Ultrasound", "CT Scan"], ["abdomen"]);
+  add("ASC-1", "Ascites mild", ["ascites", "fluid", "peritone"], [
+    { any: ["ascites", "fluid"], value: "Small volume free intraperitoneal fluid.", tag: "ab" }
+  ], "Mild ascites.", ["Ultrasound", "CT Scan"], ["abdomen"]);
+  add("ASC-2", "Ascites moderate", ["ascites", "fluid", "peritone"], [
+    { any: ["ascites", "fluid"], value: "Moderate ascites present.", tag: "ab" }
+  ], "Moderate ascites.", ["Ultrasound", "CT Scan"], ["abdomen"]);
+  add("ASC-3", "Ascites large", ["ascites", "fluid", "peritone"], [
+    { any: ["ascites", "fluid"], value: "Large volume ascites with dependent layering fluid.", tag: "ab" }
+  ], "Large ascites.", ["Ultrasound", "CT Scan"], ["abdomen"]);
+  add("HEP-CYST", "Simple hepatic cyst", ["liver"], [
+    { any: ["lesion", "mass", "focal"], value: "Well-defined anechoic hepatic cyst without solid component.", tag: "ab" }
+  ], "Simple hepatic cyst.", ["Ultrasound", "CT Scan", "MRI"], ["abdomen", "liver"]);
+  add("HEP-MASS", "Solid liver lesion", ["liver"], [
+    { any: ["lesion", "mass", "focal"], value: "Focal solid hepatic lesion noted; further characterisation advised.", tag: "ab" }
+  ], "Indeterminate focal liver lesion.", ["Ultrasound", "CT Scan", "MRI"], ["abdomen", "liver"]);
+  add("HEP-METS", "Liver metastases", ["liver"], [
+    { any: ["lesion", "mass", "focal"], value: "Multiple hepatic focal lesions suspicious for metastases.", tag: "ab" }
+  ], "Multiple hepatic metastatic deposits.", ["Ultrasound", "CT Scan", "MRI"], ["abdomen", "liver"]);
+  add("HEP-ABSC", "Liver abscess", ["liver"], [
+    { any: ["collection", "lesion", "mass"], value: "Complex hepatic collection with internal echoes, in keeping with abscess.", tag: "ab" }
+  ], "Hepatic abscess.", ["Ultrasound", "CT Scan"], ["abdomen", "liver"]);
+  add("CBD-DIL", "Dilated CBD", ["bile", "duct", "cbd"], [
+    { any: ["cbd", "duct"], value: "Common bile duct is dilated, suggestive of distal biliary obstruction.", tag: "ab" }
+  ], "Dilated common bile duct.", ["Ultrasound", "CT Scan"], ["abdomen"]);
+  add("GB-STONE", "Cholelithiasis", ["gallbladder", "bile"], [
+    { any: ["stone", "calculi", "shadow"], value: "Gallbladder calculi with posterior acoustic shadowing.", tag: "ab" },
+    { any: ["wall"], value: "Gallbladder wall is not significantly thickened.", tag: "n" }
+  ], "Cholelithiasis.", ["Ultrasound", "CT Scan"], ["abdomen"]);
+  add("AC-CHOL", "Acute cholecystitis", ["gallbladder", "bile"], [
+    { any: ["wall"], value: "Gallbladder wall thickening noted.", tag: "ab" },
+    { any: ["stone", "calculi"], value: "Impacted calculus at gallbladder neck.", tag: "ab" },
+    { any: ["fluid", "perichole"], value: "Pericholecystic fluid present.", tag: "ab" }
+  ], "Features of acute cholecystitis.", ["Ultrasound", "CT Scan"], ["abdomen"]);
+  add("CHRON-CHOL", "Chronic cholecystitis", ["gallbladder", "bile"], [
+    { any: ["wall"], value: "Gallbladder wall appears chronically thickened.", tag: "ab" },
+    { any: ["stone", "calculi"], value: "Multiple gallstones present.", tag: "ab" }
+  ], "Chronic cholecystitis with cholelithiasis.", ["Ultrasound", "CT Scan"], ["abdomen"]);
+  add("GB-POLYP", "Gallbladder polyp", ["gallbladder", "bile"], [
+    { any: ["lesion", "mass", "polyp"], value: "Non-shadowing mural polypoid lesion in gallbladder.", tag: "ab" }
+  ], "Gallbladder polyp.", ["Ultrasound"], ["abdomen"]);
+  add("GB-SLUDGE", "Gallbladder sludge", ["gallbladder", "bile"], [
+    { any: ["content", "lumen", "sludge"], value: "Dependent low-level echoes in gallbladder lumen suggest sludge.", tag: "ab" }
+  ], "Gallbladder sludge.", ["Ultrasound"], ["abdomen"]);
+  add("PANC-ACUTE", "Acute pancreatitis", ["pancreas"], [
+    { any: ["size", "enlarged"], value: "Pancreas appears bulky and edematous.", tag: "ab" },
+    { any: ["echotexture", "signal"], value: "Peripancreatic inflammatory change present.", tag: "ab" }
+  ], "Acute pancreatitis pattern.", ["Ultrasound", "CT Scan"], ["abdomen"]);
+  add("PANC-CHRON", "Chronic pancreatitis", ["pancreas"], [
+    { any: ["calcification", "duct"], value: "Pancreatic calcifications with ductal irregularity.", tag: "ab" }
+  ], "Chronic pancreatitis changes.", ["Ultrasound", "CT Scan"], ["abdomen"]);
+  add("PANC-MASS", "Pancreatic mass", ["pancreas"], [
+    { any: ["mass", "lesion"], value: "Focal pancreatic mass lesion noted; further evaluation advised.", tag: "ab" }
+  ], "Pancreatic mass lesion.", ["Ultrasound", "CT Scan", "MRI"], ["abdomen"]);
+  add("SPLENOMEG", "Splenomegaly", ["spleen", "splenic"], [
+    { any: ["size", "span"], value: "Spleen is enlarged.", tag: "ab" }
+  ], "Splenomegaly.", ["Ultrasound", "CT Scan"], ["abdomen"]);
+  add("SPLEN-INF", "Splenic infarct", ["spleen", "splenic"], [
+    { any: ["lesion", "wedge"], value: "Peripheral wedge-shaped splenic hypoechoic area, suggestive of infarct.", tag: "ab" }
+  ], "Splenic infarct.", ["Ultrasound", "CT Scan"], ["abdomen"]);
+  add("SPLEN-CYST", "Splenic cyst", ["spleen", "splenic"], [
+    { any: ["lesion", "cyst"], value: "Simple cystic lesion in spleen.", tag: "ab" }
+  ], "Splenic cyst.", ["Ultrasound", "CT Scan"], ["abdomen"]);
+  add("APPENDICITIS", "Acute appendicitis", ["appendix", "rlq", "bowel"], [
+    { any: ["diameter", "appendix"], value: "Non-compressible blind-ending tubular structure with increased diameter.", tag: "ab" },
+    { any: ["fat", "fluid"], value: "Periappendiceal inflammatory change present.", tag: "ab" }
+  ], "Features suggest acute appendicitis.", ["Ultrasound", "CT Scan"], ["abdomen"]);
+  add("BOWEL-OBSTR", "Bowel obstruction", ["bowel", "intestinal"], [
+    { any: ["dilat", "loop"], value: "Multiple dilated bowel loops seen.", tag: "ab" },
+    { any: ["air-fluid", "fluid"], value: "Air-fluid levels present.", tag: "ab" }
+  ], "Bowel obstruction pattern.", ["X-Ray", "CT Scan", "Ultrasound"], ["abdomen"]);
+
+  var sides = [
+    { code: "R", label: "right" },
+    { code: "L", label: "left" },
+    { code: "B", label: "bilateral" }
+  ];
+
+  sides.forEach(function(s) {
+    [1,2,3,4].forEach(function(g) {
+      var grade = ["mild", "moderate", "moderately severe", "severe"][g-1];
+      add("HN-" + s.code + "-" + g, "Hydronephrosis " + s.label + " grade " + g, ["kidney", "renal", "collecting"], [
+        { any: ["hydronephrosis", "dilat", "pelvicalyceal"], value: grade + " " + s.label + " hydronephrosis.", tag: "ab" }
+      ], grade + " " + s.label + " hydronephrosis.", ["Ultrasound", "CT Scan"], ["abdomen", "renal"]);
+    });
+    add("STONE-" + s.code + "-S", "Renal stone " + s.label + " small", ["kidney", "renal", "ureter"], [
+      { any: ["stone", "calculi", "echogenic"], value: "Small " + s.label + " renal calculus with posterior shadowing.", tag: "ab" }
+    ], "Small " + s.label + " renal stone.", ["Ultrasound", "CT Scan"], ["abdomen", "renal"]);
+    add("STONE-" + s.code + "-L", "Renal stone " + s.label + " large", ["kidney", "renal", "ureter"], [
+      { any: ["stone", "calculi", "echogenic"], value: "Large " + s.label + " renal calculus with acoustic shadow.", tag: "ab" }
+    ], "Large " + s.label + " renal stone.", ["Ultrasound", "CT Scan"], ["abdomen", "renal"]);
+    add("CYST-" + s.code + "-S", "Renal cyst " + s.label + " simple", ["kidney", "renal"], [
+      { any: ["cyst", "lesion"], value: "Simple " + s.label + " renal cortical cyst.", tag: "ab" }
+    ], "Simple " + s.label + " renal cyst.", ["Ultrasound", "CT Scan"], ["abdomen", "renal"]);
+    add("CYST-" + s.code + "-C", "Renal cyst " + s.label + " complex", ["kidney", "renal"], [
+      { any: ["cyst", "lesion"], value: "Complex " + s.label + " renal cystic lesion; further characterisation advised.", tag: "ab" }
+    ], "Complex " + s.label + " renal cyst.", ["Ultrasound", "CT Scan", "MRI"], ["abdomen", "renal"]);
+    add("PYELO-" + s.code, "Pyelonephritis " + s.label, ["kidney", "renal"], [
+      { any: ["echogenicity", "cortical", "parench"], value: s.label + " renal parenchymal heterogeneity suggesting pyelonephritis.", tag: "ab" }
+    ], "Features of " + s.label + " pyelonephritis.", ["Ultrasound", "CT Scan"], ["abdomen", "renal"]);
+    add("AKI-" + s.code, "Renal parenchymal disease " + s.label, ["kidney", "renal"], [
+      { any: ["cortical", "echogenicity"], value: "Increased " + s.label + " renal cortical echogenicity with reduced corticomedullary differentiation.", tag: "ab" }
+    ], "Medical renal disease on " + s.label + ".", ["Ultrasound"], ["abdomen", "renal"]);
+  });
+
+  add("BPH-1", "BPH mild", ["prostate", "bladder"], [{ any: ["size", "volume"], value: "Mild prostatomegaly.", tag: "ab" }], "Mild prostatomegaly.", ["Ultrasound", "CT Scan"], ["pelvis", "prostate"]);
+  add("BPH-2", "BPH moderate", ["prostate", "bladder"], [{ any: ["size", "volume"], value: "Moderate prostatomegaly.", tag: "ab" }], "Moderate prostatomegaly.", ["Ultrasound", "CT Scan"], ["pelvis", "prostate"]);
+  add("BPH-3", "BPH severe", ["prostate", "bladder"], [{ any: ["size", "volume"], value: "Marked prostatomegaly with intravesical protrusion.", tag: "ab" }], "Severe prostatomegaly.", ["Ultrasound", "CT Scan"], ["pelvis", "prostate"]);
+  add("BL-WALL", "Bladder wall thickening", ["bladder"], [{ any: ["wall"], value: "Urinary bladder wall is diffusely thickened.", tag: "ab" }], "Bladder wall thickening.", ["Ultrasound", "CT Scan"], ["pelvis", "bladder"]);
+  add("BL-STONE", "Bladder calculus", ["bladder"], [{ any: ["stone", "calculi", "content"], value: "Mobile intravesical calculus with posterior acoustic shadowing.", tag: "ab" }], "Urinary bladder calculus.", ["Ultrasound", "CT Scan"], ["pelvis", "bladder"]);
+  add("BL-TUMOR", "Bladder mass", ["bladder"], [{ any: ["mass", "lesion", "wall"], value: "Irregular intraluminal bladder wall lesion suspicious for neoplasm.", tag: "ab" }], "Suspicious bladder lesion.", ["Ultrasound", "CT Scan", "MRI"], ["pelvis", "bladder"]);
+  add("RETENTION", "Urinary retention", ["bladder"], [{ any: ["volume", "content"], value: "Significant post-void residual volume.", tag: "ab" }], "Urinary retention.", ["Ultrasound"], ["pelvis", "bladder"]);
+  add("CYSTITIS", "Cystitis", ["bladder"], [{ any: ["wall"], value: "Diffuse bladder wall thickening with low-level internal echoes suggesting cystitis.", tag: "ab" }], "Features suggest cystitis.", ["Ultrasound", "CT Scan"], ["pelvis", "bladder"]);
+  add("DIVERT-BL", "Bladder diverticulum", ["bladder"], [{ any: ["divert", "wall"], value: "Bladder diverticulum noted.", tag: "ab" }], "Bladder diverticulum.", ["Ultrasound", "CT Scan"], ["pelvis", "bladder"]);
+  add("FOLEY", "Foley catheter in situ", ["bladder"], [{ any: ["catheter", "content"], value: "Foley balloon catheter seen in urinary bladder.", tag: "i" }], "Foley catheter in situ.", ["Ultrasound", "CT Scan"], ["pelvis", "bladder"], [], "i");
+
+  add("DVT-AC-R", "Acute DVT right", ["vein", "venous", "dvt"], [{ any: ["compress", "throm", "flow"], value: "Non-compressible right venous segment with acute thrombus.", tag: "ab" }], "Acute right-sided DVT.", ["Ultrasound"], ["vascular", "leg"]);
+  add("DVT-AC-L", "Acute DVT left", ["vein", "venous", "dvt"], [{ any: ["compress", "throm", "flow"], value: "Non-compressible left venous segment with acute thrombus.", tag: "ab" }], "Acute left-sided DVT.", ["Ultrasound"], ["vascular", "leg"]);
+  add("DVT-AC-B", "Acute DVT bilateral", ["vein", "venous", "dvt"], [{ any: ["compress", "throm", "flow"], value: "Bilateral non-compressible venous segments with acute thrombus.", tag: "ab" }], "Bilateral acute DVT.", ["Ultrasound"], ["vascular", "leg"]);
+  add("DVT-CHR-R", "Chronic DVT right", ["vein", "venous", "dvt"], [{ any: ["wall", "throm", "flow"], value: "Chronic post-thrombotic changes in right venous system.", tag: "ab" }], "Chronic right-sided DVT changes.", ["Ultrasound"], ["vascular", "leg"]);
+  add("DVT-CHR-L", "Chronic DVT left", ["vein", "venous", "dvt"], [{ any: ["wall", "throm", "flow"], value: "Chronic post-thrombotic changes in left venous system.", tag: "ab" }], "Chronic left-sided DVT changes.", ["Ultrasound"], ["vascular", "leg"]);
+  add("DVT-CHR-B", "Chronic DVT bilateral", ["vein", "venous", "dvt"], [{ any: ["wall", "throm", "flow"], value: "Bilateral chronic post-thrombotic venous changes.", tag: "ab" }], "Bilateral chronic DVT changes.", ["Ultrasound"], ["vascular", "leg"]);
+  add("VAR-R", "Varicose veins right", ["vein", "venous"], [{ any: ["reflux", "varic"], value: "Superficial venous reflux with right varicose veins.", tag: "ab" }], "Right varicose venous disease.", ["Ultrasound"], ["vascular", "leg"]);
+  add("VAR-L", "Varicose veins left", ["vein", "venous"], [{ any: ["reflux", "varic"], value: "Superficial venous reflux with left varicose veins.", tag: "ab" }], "Left varicose venous disease.", ["Ultrasound"], ["vascular", "leg"]);
+  add("VAR-B", "Varicose veins bilateral", ["vein", "venous"], [{ any: ["reflux", "varic"], value: "Bilateral superficial venous reflux with varicosities.", tag: "ab" }], "Bilateral varicose venous disease.", ["Ultrasound"], ["vascular", "leg"]);
+  add("CAROTID-50", "Carotid stenosis 50-69%", ["carotid", "ica", "cca"], [{ any: ["stenosis", "velocity", "psv"], value: "Hemodynamically significant carotid stenosis in 50-69% range.", tag: "ab" }], "Moderate carotid stenosis.", ["Ultrasound", "CT Scan"], ["vascular", "neck"]);
+  add("CAROTID-70", "Carotid stenosis >70%", ["carotid", "ica", "cca"], [{ any: ["stenosis", "velocity", "psv"], value: "Severe carotid stenosis (>70%).", tag: "ab" }], "Severe carotid stenosis.", ["Ultrasound", "CT Scan"], ["vascular", "neck"]);
+  add("PAD-MILD", "Peripheral arterial disease mild", ["artery", "arterial", "doppler"], [{ any: ["waveform", "stenosis", "flow"], value: "Mild peripheral arterial insufficiency pattern.", tag: "ab" }], "Mild PAD.", ["Ultrasound"], ["vascular", "leg"]);
+  add("PAD-SEV", "Peripheral arterial disease severe", ["artery", "arterial", "doppler"], [{ any: ["waveform", "stenosis", "flow"], value: "Severe peripheral arterial insufficiency with monophasic flow.", tag: "ab" }], "Severe PAD.", ["Ultrasound"], ["vascular", "leg"]);
+  add("AAA-SM", "AAA small", ["aorta"], [{ any: ["diameter", "aorta"], value: "Infrarenal abdominal aortic aneurysm (small).", tag: "ab" }], "Small AAA.", ["Ultrasound", "CT Scan"], ["abdomen", "aorta"]);
+  add("AAA-LG", "AAA large", ["aorta"], [{ any: ["diameter", "aorta"], value: "Large infrarenal abdominal aortic aneurysm.", tag: "ab" }], "Large AAA; urgent vascular review.", ["Ultrasound", "CT Scan"], ["abdomen", "aorta"]);
+  add("PVT", "Portal vein thrombosis", ["portal", "liver"], [{ any: ["portal", "flow", "throm"], value: "Portal vein thrombus with absent color flow.", tag: "ab" }], "Portal vein thrombosis.", ["Ultrasound", "CT Scan"], ["abdomen", "liver"]);
+  add("SMV-THR", "SMV thrombosis", ["mesenteric", "vein"], [{ any: ["throm", "flow"], value: "Superior mesenteric vein thrombosis suspected.", tag: "ab" }], "SMV thrombosis.", ["Ultrasound", "CT Scan"], ["abdomen", "vascular"]);
+
+  ["RUL","RML","RLL","LUL","LLL"].forEach(function(lobe) {
+    add("PNA-" + lobe, "Pneumonia " + lobe, ["lung", "chest", "pleura"], [
+      { any: ["opacity", "consolidation", "airspace"], value: lobe + " airspace consolidation, likely infective.", tag: "ab" }
+    ], lobe + " pneumonia.", ["X-Ray", "CT Scan"], ["chest", "lung"]);
+  });
+  add("EDEMA-CARD", "Cardiogenic pulmonary edema", ["lung", "heart", "chest"], [
+    { any: ["b-line", "interstitial", "opacity"], value: "Diffuse bilateral interstitial/alveolar edema pattern.", tag: "ab" },
+    { any: ["cardio", "heart", "ctr"], value: "Cardiomegaly present.", tag: "ab" }
+  ], "Cardiogenic pulmonary edema.", ["X-Ray", "CT Scan", "Ultrasound"], ["chest", "lung"]);
+  add("PNEUMOTHORAX-R", "Pneumothorax right", ["pleura", "lung", "chest"], [{ any: ["pneumothorax", "pleural"], value: "Right-sided pneumothorax.", tag: "ab" }], "Right pneumothorax.", ["X-Ray", "CT Scan", "Ultrasound"], ["chest", "lung"]);
+  add("PNEUMOTHORAX-L", "Pneumothorax left", ["pleura", "lung", "chest"], [{ any: ["pneumothorax", "pleural"], value: "Left-sided pneumothorax.", tag: "ab" }], "Left pneumothorax.", ["X-Ray", "CT Scan", "Ultrasound"], ["chest", "lung"]);
+  add("PNEUMOTHORAX-B", "Pneumothorax bilateral", ["pleura", "lung", "chest"], [{ any: ["pneumothorax", "pleural"], value: "Bilateral pneumothoraces.", tag: "ab" }], "Bilateral pneumothoraces.", ["X-Ray", "CT Scan", "Ultrasound"], ["chest", "lung"]);
+  add("PLEFF-R-S", "Pleural effusion right small", ["pleura", "effusion"], [{ any: ["effusion", "fluid"], value: "Small right pleural effusion.", tag: "ab" }], "Small right pleural effusion.", ["X-Ray", "CT Scan", "Ultrasound"], ["chest", "lung"]);
+  add("PLEFF-R-M", "Pleural effusion right moderate", ["pleura", "effusion"], [{ any: ["effusion", "fluid"], value: "Moderate right pleural effusion.", tag: "ab" }], "Moderate right pleural effusion.", ["X-Ray", "CT Scan", "Ultrasound"], ["chest", "lung"]);
+  add("PLEFF-R-L", "Pleural effusion right large", ["pleura", "effusion"], [{ any: ["effusion", "fluid"], value: "Large right pleural effusion with compressive atelectasis.", tag: "ab" }], "Large right pleural effusion.", ["X-Ray", "CT Scan", "Ultrasound"], ["chest", "lung"]);
+  add("PLEFF-L-S", "Pleural effusion left small", ["pleura", "effusion"], [{ any: ["effusion", "fluid"], value: "Small left pleural effusion.", tag: "ab" }], "Small left pleural effusion.", ["X-Ray", "CT Scan", "Ultrasound"], ["chest", "lung"]);
+  add("PLEFF-L-M", "Pleural effusion left moderate", ["pleura", "effusion"], [{ any: ["effusion", "fluid"], value: "Moderate left pleural effusion.", tag: "ab" }], "Moderate left pleural effusion.", ["X-Ray", "CT Scan", "Ultrasound"], ["chest", "lung"]);
+  add("PLEFF-L-L", "Pleural effusion left large", ["pleura", "effusion"], [{ any: ["effusion", "fluid"], value: "Large left pleural effusion with compressive atelectasis.", tag: "ab" }], "Large left pleural effusion.", ["X-Ray", "CT Scan", "Ultrasound"], ["chest", "lung"]);
+  add("PLEFF-BIL", "Pleural effusion bilateral", ["pleura", "effusion"], [{ any: ["effusion", "fluid"], value: "Bilateral pleural effusions.", tag: "ab" }], "Bilateral pleural effusions.", ["X-Ray", "CT Scan", "Ultrasound"], ["chest", "lung"]);
+  add("COPD-HYPER", "COPD hyperinflation", ["lung", "chest"], [{ any: ["hyperinflation", "lung"], value: "Hyperinflated lungs with increased retrosternal lucency.", tag: "ab" }], "COPD hyperinflation pattern.", ["X-Ray", "CT Scan"], ["chest", "lung"]);
+  add("TB-CAV", "Pulmonary TB cavitary", ["lung", "chest"], [{ any: ["cavity", "opacity", "lesion"], value: "Upper lobe cavitary lesion with surrounding infiltrates, suggestive of TB.", tag: "ab" }], "Cavitatory pulmonary TB pattern.", ["X-Ray", "CT Scan"], ["chest", "lung"]);
+  add("ILD-FIB", "Interstitial fibrosis", ["lung", "chest"], [{ any: ["reticular", "fibrosis", "interstitial"], value: "Bilateral interstitial fibrotic changes.", tag: "ab" }], "Interstitial fibrotic lung disease.", ["X-Ray", "CT Scan"], ["chest", "lung"]);
+  add("CARDIOMEG", "Cardiomegaly", ["heart", "chest"], [{ any: ["ctr", "cardio", "heart"], value: "Cardiothoracic ratio is enlarged, consistent with cardiomegaly.", tag: "ab" }], "Cardiomegaly.", ["X-Ray", "CT Scan"]);
+  add("ATELECT-RB", "Atelectasis right base", ["lung", "chest"], [{ any: ["collapse", "atelect"], value: "Subsegmental atelectatic change at right lung base.", tag: "ab" }], "Right basal atelectasis.", ["X-Ray", "CT Scan"], ["chest", "lung"]);
+  add("ATELECT-LB", "Atelectasis left base", ["lung", "chest"], [{ any: ["collapse", "atelect"], value: "Subsegmental atelectatic change at left lung base.", tag: "ab" }], "Left basal atelectasis.", ["X-Ray", "CT Scan"], ["chest", "lung"]);
+
+  add("OLIGO", "Oligohydramnios", ["amniotic", "liquor", "afi"], [{ any: ["afi", "liquor"], value: "Reduced amniotic fluid volume (oligohydramnios).", tag: "ab" }], "Oligohydramnios.", ["Ultrasound"], ["ob", "preg"]);
+  add("POLY", "Polyhydramnios", ["amniotic", "liquor", "afi"], [{ any: ["afi", "liquor"], value: "Increased amniotic fluid volume (polyhydramnios).", tag: "ab" }], "Polyhydramnios.", ["Ultrasound"], ["ob", "preg"]);
+  add("FGR", "Fetal growth restriction", ["growth", "doppler", "biometry"], [{ any: ["efw", "ac", "growth"], value: "Estimated fetal weight is below expected centile; features suggest FGR.", tag: "ab" }], "Fetal growth restriction.", ["Ultrasound"], ["ob", "preg"]);
+  add("PLAC-PREVIA", "Placenta previa", ["placenta"], [{ any: ["placenta", "os"], value: "Placenta covers/internal os consistent with placenta previa.", tag: "ab" }], "Placenta previa.", ["Ultrasound"], ["ob", "preg"]);
+  add("PLAC-ABRUPT", "Placental abruption", ["placenta"], [{ any: ["placenta", "retroplacental", "collection"], value: "Retroplacental collection concerning for abruption.", tag: "ab" }], "Suspicious for placental abruption.", ["Ultrasound"], ["ob", "preg"]);
+  add("SHORT-CX", "Short cervix", ["cervix", "cervical"], [{ any: ["length", "cervix"], value: "Cervical length is short.", tag: "ab" }], "Short cervix.", ["Ultrasound"], ["ob", "preg"]);
+  add("VENTRIC-10", "Ventriculomegaly", ["ventricle", "brain", "head"], [{ any: ["ventricle", "atrial"], value: "Mild fetal ventriculomegaly.", tag: "ab" }], "Fetal ventriculomegaly.", ["Ultrasound"], ["ob", "preg"]);
+  add("MCA-RAISED", "Raised MCA PSV", ["mca", "doppler"], [{ any: ["mca", "psv"], value: "MCA peak systolic velocity is elevated.", tag: "ab" }], "Elevated MCA PSV.", ["Ultrasound"], ["ob", "preg"]);
+  add("UA-ABSENT", "Absent end-diastolic flow", ["umbilical", "ua", "doppler"], [{ any: ["end-diastolic", "ua"], value: "Absent end-diastolic flow in umbilical artery.", tag: "ab" }], "AEDF in umbilical artery.", ["Ultrasound"], ["ob", "preg"]);
+  add("UA-REVERSE", "Reversed end-diastolic flow", ["umbilical", "ua", "doppler"], [{ any: ["end-diastolic", "ua"], value: "Reversed end-diastolic flow in umbilical artery.", tag: "ab" }], "REDF in umbilical artery.", ["Ultrasound"], ["ob", "preg"]);
+  add("BREECH", "Breech presentation", ["presentation", "fetal"], [{ any: ["presentation", "lie"], value: "Fetus is in breech presentation.", tag: "ab" }], "Breech presentation.", ["Ultrasound"], ["ob", "preg"]);
+  add("TWINS-MCDA", "Twin pregnancy MCDA", ["fetal", "placenta", "cord"], [{ any: ["fetal number", "chorionicity"], value: "Twin pregnancy with monochorionic diamniotic chorionicity.", tag: "ab" }], "MCDA twin pregnancy.", ["Ultrasound"], ["ob", "preg"]);
+
+  if (out.length < 100) {
+    console.warn("Shortcut library has fewer than 100 entries:", out.length);
+  }
+  return out;
+})();
+
+function normalizeShortcutCode(v) {
+  return String(v || "").toUpperCase().replace(/\s+/g, "").trim();
+}
+
+function shortcutAppliesToContext(sc, modality, region, sectionLabel) {
+  if (sc.modalities && sc.modalities.length && sc.modalities.indexOf(modality) === -1) return false;
+  if (sc.regionKeywords && sc.regionKeywords.length) {
+    var r = String(region || "").toLowerCase();
+    if (!sc.regionKeywords.some(function(k) { return r.indexOf(k) !== -1; })) return false;
+  }
+  if (sc.sectionKeywords && sc.sectionKeywords.length) {
+    var s = String(sectionLabel || "").toLowerCase();
+    if (!sc.sectionKeywords.some(function(k) { return s.indexOf(k) !== -1; })) return false;
+  }
+  return true;
+}
+
+function fieldMatchesRule(fieldName, rule) {
+  var f = String(fieldName || "").toLowerCase();
+  var any = Array.isArray(rule.any) ? rule.any : [];
+  var all = Array.isArray(rule.all) ? rule.all : [];
+  if (all.length && !all.every(function(tok) { return f.indexOf(String(tok).toLowerCase()) !== -1; })) return false;
+  if (any.length && !any.some(function(tok) { return f.indexOf(String(tok).toLowerCase()) !== -1; })) return false;
+  return any.length > 0 || all.length > 0;
+}
+
 /* ══════════════════════════════════
    MAIN APP
 ══════════════════════════════════ */
@@ -3018,6 +3272,7 @@ function RadReport() {
   var [aiLoad, setAiLoad]           = useState({});
   var [toast, setToast]             = useState(null);
   var [templateQuery, setTemplateQuery] = useState("");
+  var [secShortcutInput, setSecShortcutInput] = useState({});
   var [draftQuery, setDraftQuery] = useState("");
   var [savedReports, setSavedReports] = useState([]);
   var [activeDraftId, setActiveDraftId] = useState(null);
@@ -3338,6 +3593,56 @@ function RadReport() {
   var getT = function(sl, f){ return tags[sl+"__"+f]; };
   var togT = function(sl, f, t){ setTags(function(p){ var n = Object.assign({}, p); n[sl+"__"+f] = p[sl+"__"+f] === t ? null : t; return n; }); };
   var setLD = function(k, v){ setAiLoad(function(p){ var n = Object.assign({}, p); n[k] = v; return n; }); };
+  var getSectionShortcuts = function(sec) {
+    return SHORTCUTS.filter(function(sc) {
+      return shortcutAppliesToContext(sc, modality, region, sec.label);
+    });
+  };
+
+  var applySectionShortcut = useCallback(function(sec, rawCode) {
+    var code = normalizeShortcutCode(rawCode);
+    if (!code) { showToast("Enter a shortcut code first", "error"); return; }
+    var sc = SHORTCUTS.find(function(s) {
+      if (normalizeShortcutCode(s.code) === code) return true;
+      return (s.aliases || []).some(function(a) { return normalizeShortcutCode(a) === code; });
+    });
+    if (!sc) {
+      showToast("Shortcut not found: " + code, "error");
+      return;
+    }
+    if (!shortcutAppliesToContext(sc, modality, region, sec.label)) {
+      showToast("Shortcut " + sc.code + " is not applicable to this section", "error");
+      return;
+    }
+
+    var changed = 0;
+    var fNext = Object.assign({}, findings);
+    var tNext = Object.assign({}, tags);
+    sec.fields.forEach(function(field) {
+      var key = sec.label + "__" + field;
+      var rule = (sc.rules || []).find(function(r) { return fieldMatchesRule(field, r); });
+      if (rule) {
+        fNext[key] = rule.value;
+        if (rule.tag === "n" || rule.tag === "ab" || rule.tag === "i") tNext[key] = rule.tag;
+        changed++;
+      }
+    });
+
+    if (!changed && sec.fields.length && sc.fallback) {
+      var fk = sec.label + "__" + sec.fields[0];
+      fNext[fk] = sc.fallback;
+      if (sc.defaultTag) tNext[fk] = sc.defaultTag;
+      changed = 1;
+    }
+    if (!changed) {
+      showToast("No matching fields for shortcut in this section", "info");
+      return;
+    }
+
+    setFindings(fNext);
+    setTags(tNext);
+    showToast("⚡ " + sc.code + " applied (" + changed + " field" + (changed > 1 ? "s" : "") + ")", "success");
+  }, [modality, region, findings, tags, showToast]);
 
   var expandField = useCallback(async function(sl, field) {
     var cur = getF(sl, field).trim();
@@ -3414,6 +3719,7 @@ function RadReport() {
     setStep("home"); setModality(null); setRegion(null);
     setPatient({name:"",age:"",sex:"Male",refBy:"",clinicalInfo:"",studyDate:new Date().toISOString().split("T")[0],reportingDoc:"",institution:""});
     setFindings({}); setTags({}); setImpression(""); setRec(""); setUrgency("Routine"); setAiLoad({});
+    setSecShortcutInput({});
     setActiveDraftId(null);
     setFinalizeAudit(null);
     setFinalizedMeta(null);
@@ -3953,9 +4259,14 @@ function RadReport() {
             <span style={{fontWeight:700,fontSize:13,color:"#DC2626"}}>Recording — speak clearly, then click ⏹ to stop</span>
           </div>
         )}
+        <datalist id="rrp-shortcuts-list">
+          {SHORTCUTS.map(function(sc){ return <option key={sc.code} value={sc.code}>{sc.title}</option>; })}
+        </datalist>
 
         {sections.map(function(sec) {
           var sk = "sec__"+sec.label;
+          var secShortcuts = getSectionShortcuts(sec);
+          var shortcutValue = secShortcutInput[sk] || "";
           return (
             <div key={sec.label} style={crd}>
               <div style={cHd(C.col)}>
@@ -3969,6 +4280,40 @@ function RadReport() {
                 }} style={{padding:"4px 10px",borderRadius:20,fontSize:11,fontWeight:700,cursor:"pointer",border:"none",background:C.bdr,color:C.soft}}>✓ All Normal</button>
               </div>
               <div style={{padding:20}}>
+                <div style={{marginBottom:14,padding:"10px 12px",borderRadius:10,background:"#F8FAFF",border:"1px solid #DDE5EF"}}>
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                    <input
+                      list="rrp-shortcuts-list"
+                      className="ri"
+                      style={inp({maxWidth:270,padding:"7px 10px",fontSize:12})}
+                      placeholder="Shortcut code e.g. FL-1, CLD, PNA-RUL"
+                      value={shortcutValue}
+                      onChange={function(e){
+                        var v = e.target.value;
+                        setSecShortcutInput(function(p){ var n = Object.assign({}, p); n[sk] = v; return n; });
+                      }}
+                    />
+                    <button
+                      style={btn(C.col, "#fff", {padding:"7px 12px",fontSize:12})}
+                      onClick={function(){ applySectionShortcut(sec, shortcutValue); }}
+                    >Apply Shortcut</button>
+                    <span style={{fontSize:11,color:C.soft}}>{secShortcuts.length} available</span>
+                  </div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                    {secShortcuts.slice(0,10).map(function(sc){
+                      return (
+                        <span key={sc.code}
+                          style={{fontSize:10,padding:"4px 8px",borderRadius:16,background:"#EEF4FF",border:"1px solid #C7D2FE",color:"#334155",cursor:"pointer",fontWeight:700}}
+                          title={sc.title}
+                          onClick={function(){
+                            setSecShortcutInput(function(p){ var n = Object.assign({}, p); n[sk] = sc.code; return n; });
+                            applySectionShortcut(sec, sc.code);
+                          }}
+                        >{sc.code}</span>
+                      );
+                    })}
+                  </div>
+                </div>
                 {sec.fields.map(function(field) {
                   var k = sec.label+"__"+field;
                   return (
