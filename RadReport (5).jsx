@@ -3018,6 +3018,7 @@ function RadReport() {
   var [aiLoad, setAiLoad]           = useState({});
   var [toast, setToast]             = useState(null);
   var [templateQuery, setTemplateQuery] = useState("");
+  var [draftQuery, setDraftQuery] = useState("");
   var [savedReports, setSavedReports] = useState([]);
   var [activeDraftId, setActiveDraftId] = useState(null);
   var [syncingDrafts, setSyncingDrafts] = useState(false);
@@ -3442,6 +3443,13 @@ function RadReport() {
     return hay.indexOf(q) !== -1;
   });
   var regionList = tpl ? tpl.regions.filter(function(r){ return !q || r.toLowerCase().indexOf(q) !== -1; }) : [];
+  var draftQ = draftQuery.trim().toLowerCase();
+  var filteredDrafts = savedReports.filter(function(d) {
+    if (!draftQ) return true;
+    var patientName = (d.patient && d.patient.name) ? d.patient.name : "";
+    var hay = [d.label || "", patientName, d.modality || "", d.region || "", d.updatedBy || ""].join(" ").toLowerCase();
+    return hay.indexOf(draftQ) !== -1;
+  });
 
   if (step === "login") return (
     <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:"linear-gradient(140deg,#06101b,#0f2440)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -4036,17 +4044,31 @@ function RadReport() {
         </div>}
       />
       <div style={pg}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:10,flexWrap:"wrap"}}>
           <div style={{fontFamily:"'DM Serif Display',serif",fontSize:28,color:C.navy}}>Saved Drafts</div>
-          <div style={{fontSize:12,color:C.soft}}>{savedReports.length} total</div>
+          <div style={{fontSize:12,color:C.soft}}>{filteredDrafts.length} shown / {savedReports.length} total</div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <input
+            className="ri"
+            style={inp({maxWidth:460})}
+            placeholder="Search drafts by label, patient, modality, region..."
+            value={draftQuery}
+            onChange={function(e){ setDraftQuery(e.target.value); }}
+          />
         </div>
         {!savedReports.length && (
           <div style={{background:"#fff",border:"1px solid "+C.bdr,borderRadius:12,padding:20,color:C.soft}}>
             No drafts found. Save one from Findings, Impression, or Preview.
           </div>
         )}
+        {!!savedReports.length && !filteredDrafts.length && (
+          <div style={{background:"#fff",border:"1px solid "+C.bdr,borderRadius:12,padding:20,color:C.soft,marginBottom:12}}>
+            No drafts match your search.
+          </div>
+        )}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:12}}>
-          {savedReports.map(function(draft) {
+          {filteredDrafts.map(function(draft) {
             var mcol = (draft.modality && T[draft.modality] && T[draft.modality].color) || "#0077B6";
             var versions = Array.isArray(draft.versions) ? draft.versions : [];
             return (
