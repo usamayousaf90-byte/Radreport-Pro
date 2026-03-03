@@ -3024,6 +3024,8 @@ function RadReport() {
   var [authUser, setAuthUser] = useState(null);
   var [users, setUsers] = useState([]);
   var [loginForm, setLoginForm] = useState({ username: "", password: "" });
+  var [finalizeAudit, setFinalizeAudit] = useState(null);
+  var [finalizedMeta, setFinalizedMeta] = useState(null);
   var printRef = useRef(null);
 
   /* ── helpers ── */
@@ -3034,6 +3036,119 @@ function RadReport() {
 
   var canFinalize = !!(authUser && (authUser.role === "Admin" || authUser.role === "Radiologist"));
   var canDeleteDraft = canFinalize;
+
+  var abnormalLex = ["fracture","mass","lesion","effusion","pneumothorax","hemorrhage","haemorrhage","occlusion","thrombosis","malignancy","tumor","tumour","infarct","appendicitis","perforation","aneurysm","embolism","consolidation"];
+  var normalLex = ["within normal limits","normal","unremarkable","no acute","no abnormality"];
+  var criticalLex = ["pneumothorax","hemorrhage","haemorrhage","aneurysm","embolism","occlusion","dissection","free air","perforation","tension","stroke"];
+
+  var runFinalizeAudit = useCallback(function() {
+    var blockers = [];
+    var warnings = [];
+    var suggestions = [];
+    var score = 100;
+    var allRows = [];
+    sections.forEach(function(sec) {
+      sec.fields.forEach(function(field) {
+        var key = sec.label + "__" + field;
+        var v = findings[key] || "";
+        var t = tags[key] || null;
+        allRows.push({ key: key, sec: sec.label, field: field, val: v.trim(), tag: t });
+      });
+    });
+
+    var missingPatient = [];
+    if (!patient.name) missingPatient.push("Patient name");
+    if (!patient.studyDate) missingPatient.push("Study date");
+    if (!patient.reportingDoc) missingPatient.push("Reporting doctor");
+    if (missingPatient.length) {
+      blockers.push("Missing patient metadata: " + missingPatient.join(", "));
+      score -= 25;
+    }
+
+    var filledRows = allRows.filter(function(r) { return !!r.val; });
+    var missingCount = allRows.length - filledRows.length;
+    if (missingCount > 0) {
+      warnings.push(missingCount + " findings field(s) left empty.");
+      score -= Math.min(20, Math.round((missingCount / Math.max(allRows.length, 1)) * 25));
+      suggestions.push("Complete key empty fields or mark clearly as normal/not visualized.");
+    }
+
+    var contradictions = [];
+    filledRows.forEach(function(r) {
+      var low = r.val.toLowerCase();
+      var hasAbnWord = abnormalLex.some(function(w) { return low.indexOf(w) !== -1; });
+      var hasNormWord = normalLex.some(function(w) { return low.indexOf(w) !== -1; });
+      if (r.tag === "n" && hasAbnWord) contradictions.push(r.sec + " > " + r.field + " tagged NORMAL but text sounds abnormal.");
+      if (r.tag === "ab" && hasNormWord && !hasAbnWord) contradictions.push(r.sec + " > " + r.field + " tagged ABNORMAL but text sounds normal.");
+    });
+    if (contradictions.length) {
+      blockers = blockers.concat(contradictions.slice(0, 4));
+      score -= Math.min(24, contradictions.length * 6);
+    }
+
+    var criticalHits = filledRows.filter(function(r) {
+      var low = r.val.toLowerCase();
+      return criticalLex.some(function(w) { return low.indexOf(w) !== -1; }) || r.tag === "ab";
+    });
+    if (criticalHits.length && urgency === "Routine") {
+      blockers.push("Urgency mismatch: abnormal/critical findings present but urgency is Routine.");
+      score -= 20;
+      suggestions.push("Set urgency to Urgent/Critical where appropriate.");
+    }
+
+    if (criticalHits.length && !impression.trim()) {
+      blockers.push("Dangerous omission: abnormal findings exist but Impression is empty.");
+      score -= 25;
+    }
+
+    if (criticalHits.length && !recommendation.trim()) {
+      warnings.push("Recommendation section is empty despite abnormal/critical findings.");
+      score -= 10;
+      suggestions.push("Add follow-up/communication recommendation.");
+    }
+
+    if (hasAbnWordInText(impression, criticalLex) && urgency !== "Critical – Notify Immediately") {
+      warnings.push("Impression contains high-risk wording; consider Critical urgency.");
+      score -= 8;
+    }
+
+    score = Math.max(0, Math.min(100, score));
+    var result = {
+      score: score,
+      blockers: blockers,
+      warnings: warnings,
+      suggestions: suggestions,
+      at: new Date().toISOString(),
+      passed: blockers.length === 0
+    };
+    setFinalizeAudit(result);
+    return result;
+  }, [sections, findings, tags, patient, impression, recommendation, urgency]);
+
+  function hasAbnWordInText(text, words) {
+    var low = (text || "").toLowerCase();
+    return words.some(function(w) { return low.indexOf(w) !== -1; });
+  }
+
+  var finalizeReport = useCallback(function() {
+    if (!canFinalize) {
+      showToast("Only Admin/Radiologist can finalize", "error");
+      return;
+    }
+    var result = runFinalizeAudit();
+    if (!result.passed) {
+      showToast("Finalize blocked: resolve blockers first", "error");
+      return;
+    }
+    var meta = {
+      by: authUser ? authUser.username : "unknown",
+      role: authUser ? authUser.role : "unknown",
+      at: new Date().toISOString(),
+      score: result.score
+    };
+    setFinalizedMeta(meta);
+    showToast("✅ Report finalized (" + result.score + "% confidence)", "success");
+  }, [canFinalize, runFinalizeAudit, authUser, showToast]);
 
   var persistAllDrafts = useCallback(async function(next) {
     if (!authUser || !authUser.username) return;
@@ -3299,6 +3414,8 @@ function RadReport() {
     setPatient({name:"",age:"",sex:"Male",refBy:"",clinicalInfo:"",studyDate:new Date().toISOString().split("T")[0],reportingDoc:"",institution:""});
     setFindings({}); setTags({}); setImpression(""); setRec(""); setUrgency("Routine"); setAiLoad({});
     setActiveDraftId(null);
+    setFinalizeAudit(null);
+    setFinalizedMeta(null);
     try { voiceStop(); } catch(e) {}
   }, [voiceStop]);
 
@@ -3983,12 +4100,46 @@ function RadReport() {
             <button style={obtn("#fff")} onClick={function(){ setStep("drafts"); }}>Drafts</button>
             <button style={obtn("#fff")} onClick={function(){ var nm = window.prompt("Draft name", patient.name || "Untitled draft"); if (nm !== null) saveDraft(nm); }}>Save Draft</button>
             <button style={obtn("#fff")} onClick={function(){window.print();}}>🖨️ Print / PDF</button>
-            <button style={btn(canFinalize ? C.ok : "#8CA3BF")} disabled={!canFinalize} onClick={function(){ if (canFinalize) showToast("✅ Report marked as finalized by " + authUser.role, "success"); }}>
+            <button style={obtn("#fff")} onClick={runFinalizeAudit}>Run QA</button>
+            <button style={btn(canFinalize ? C.ok : "#8CA3BF")} disabled={!canFinalize} onClick={finalizeReport}>
               Finalize
             </button>
             <button style={btn(C.err)} onClick={reset}>🔄 New Report</button>
           </div>}
         />
+        <div className="np" style={{maxWidth:860,margin:"10px auto 0",padding:"0 20px"}}>
+          {finalizeAudit && (
+            <div style={{background:"#fff",border:"1px solid "+(finalizeAudit.passed?"#A7F3D0":"#FECACA"),borderRadius:12,padding:14,marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <div style={{fontWeight:800,color:"#0F172A"}}>Finalize QA Score: {finalizeAudit.score}%</div>
+                <div style={{fontSize:12,fontWeight:700,color:finalizeAudit.passed?"#15803D":"#B91C1C"}}>{finalizeAudit.passed?"PASS":"BLOCKED"}</div>
+              </div>
+              {finalizeAudit.blockers.length > 0 && (
+                <div style={{marginTop:10}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#B91C1C"}}>Blockers</div>
+                  {finalizeAudit.blockers.map(function(b, i){ return <div key={i} style={{fontSize:12,color:"#7F1D1D",marginTop:3}}>• {b}</div>; })}
+                </div>
+              )}
+              {finalizeAudit.warnings.length > 0 && (
+                <div style={{marginTop:10}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#B45309"}}>Warnings</div>
+                  {finalizeAudit.warnings.map(function(w, i){ return <div key={i} style={{fontSize:12,color:"#78350F",marginTop:3}}>• {w}</div>; })}
+                </div>
+              )}
+              {finalizeAudit.suggestions.length > 0 && (
+                <div style={{marginTop:10}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#1D4ED8"}}>Suggestions</div>
+                  {finalizeAudit.suggestions.map(function(s, i){ return <div key={i} style={{fontSize:12,color:"#1E3A8A",marginTop:3}}>• {s}</div>; })}
+                </div>
+              )}
+            </div>
+          )}
+          {finalizedMeta && (
+            <div style={{background:"#ECFDF5",border:"1px solid #86EFAC",borderRadius:10,padding:"10px 12px",fontSize:12,color:"#166534",marginBottom:10}}>
+              Finalized by {finalizedMeta.by} ({finalizedMeta.role}) at {new Date(finalizedMeta.at).toLocaleString()} · confidence {finalizedMeta.score}%
+            </div>
+          )}
+        </div>
         <div ref={printRef} style={{maxWidth:860,margin:"0 auto",padding:"28px 20px"}}>
           {/* header card */}
           <div style={Object.assign({},crd,{marginBottom:20})}>
