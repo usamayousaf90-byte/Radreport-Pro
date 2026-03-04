@@ -2950,21 +2950,6 @@ function FindingField({
         <span style={{fontSize:10,color:"#5A7090"}}>{(shortcutChoices || []).length} codes</span>
       </div>
       <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:6}}>
-        {(shortcutChoices || []).slice(0, 8).map(function(sc){
-          return (
-            <span
-              key={sc.code}
-              style={{fontSize:10,padding:"3px 8px",borderRadius:20,background:"#EEF4FF",border:"1px solid #C7D2FE",color:"#334155",cursor:"pointer",fontWeight:700}}
-              title={sc.title}
-              onClick={function(){
-                onShortcutChange(sc.code);
-                onShortcutApply(sc.code);
-              }}
-            >{sc.code}</span>
-          );
-        })}
-      </div>
-      <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:6}}>
         {(FS[field.toLowerCase()] || FS["_default"]).map(function(s,i){
           var isN  = s.k === "n";
           var isAb = s.k === "ab";
