@@ -1,3 +1,33 @@
 {
-  "cleanUrls": true
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/app",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/templates",
+      "destination": "/templates.html"
+    },
+    {
+      "source": "/admin",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/records",
+      "destination": "/records.html"
+    },
+    {
+      "source": "/portal",
+      "destination": "/patient-portal.html"
+    },
+    {
+      "source": "/portal/:reportId",
+      "destination": "/patient-portal.html?reportId=:reportId"
+    },
+    {
+      "source": "/report/:reportId",
+      "destination": "/report.html?reportId=:reportId"
+    }
+  ]
 }
