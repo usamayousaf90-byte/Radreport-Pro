@@ -244,8 +244,8 @@ function App() {
             <div style={{ color: "#475569", marginTop: 4 }}>Module 5: PDF Report, Portal View, QR Verification, Digital Signature</div>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <a href="/" style={{ color: "#1D4ED8", fontWeight: 700 }}>Suite</a>
-            <a href="/templates" style={{ color: "#1D4ED8", fontWeight: 700 }}>Templates</a>
+            <a href="/ris" style={{ color: "#1D4ED8", fontWeight: 700 }}>RIS Home</a>
+            <a href="/templates" style={{ color: "#1D4ED8", fontWeight: 700 }}>Template Suite</a>
             <a href="/portal" style={{ color: "#1D4ED8", fontWeight: 700 }}>Patient Portal</a>
             <a href="/records" style={{ color: "#1D4ED8", fontWeight: 700 }}>Records</a>
             <a href="/admin" style={{ color: "#1D4ED8", fontWeight: 700 }}>Admin</a>

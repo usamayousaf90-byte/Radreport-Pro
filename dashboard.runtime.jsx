@@ -51,14 +51,6 @@ function App() {
 
   const modules = [
     {
-      title: "Template Studio (Legacy Engine)",
-      desc: "Your original RadReport codebase with full template system, shortcut manager, and prior data flow.",
-      href: "/templates",
-      color: "linear-gradient(90deg,#0F766E,#14B8A6)",
-      button: "#0F766E",
-      badge: "Previous Codebase + Templates"
-    },
-    {
       title: "1. Reception + Billing",
       desc: "Patient registration, auto patient ID, queue creation, search/history and cash receipt generation.",
       href: "/reception.html",
@@ -115,9 +107,13 @@ function App() {
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 18 }}>
           <div>
             <div style={{ fontSize: 12, color: "#334155", fontWeight: 700, letterSpacing: 0.5 }}>RADREPORTPRO</div>
-            <h1 style={{ margin: "4px 0 6px", fontSize: 34, lineHeight: 1.1 }}>Unified RIS + LIS + Templates Suite</h1>
+            <h1 style={{ margin: "4px 0 6px", fontSize: 34, lineHeight: 1.1 }}>RIS System Dashboard</h1>
             <div style={{ color: "#475569", maxWidth: 830 }}>
-              Combined build: your previous template-heavy RadReport engine + all core modules in one integrated suite.
+              Reception to reporting workflow in one operational dashboard. Templates are now maintained separately.
+            </div>
+            <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <a href="/" style={{ color: "#1D4ED8", fontWeight: 700, textDecoration: "none" }}>Workspace Launcher</a>
+              <a href="/templates" style={{ color: "#0F766E", fontWeight: 700, textDecoration: "none" }}>Open Template Suite</a>
             </div>
           </div>
 
@@ -140,10 +136,7 @@ function App() {
               <div key={m.title} style={cardStyle(m.color)}>
                 <div style={colorBar(m.color)} />
                 <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                    <div style={{ fontWeight: 800, fontSize: 18 }}>{m.title}</div>
-                    {m.badge ? <span style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", color: "#065F46", borderRadius: 99, padding: "4px 8px", fontSize: 10, fontWeight: 700 }}>{m.badge}</span> : null}
-                  </div>
+                  <div style={{ fontWeight: 800, fontSize: 18 }}>{m.title}</div>
                   <div style={{ color: "#475569", fontSize: 13, lineHeight: 1.45, minHeight: 58 }}>{m.desc}</div>
                   <div style={{ marginTop: "auto" }}>
                     <a href={m.href} style={btnStyle(m.button)}>Open Module</a>

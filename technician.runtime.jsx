@@ -344,8 +344,8 @@ function App() {
             <div style={{ color: "#475569", marginTop: 4 }}>Module 3: Upload Data, Clinical Notes, Lab Values, Ready for Reporting</div>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <a href="/" style={{ color: "#1D4ED8", fontWeight: 700 }}>Suite</a>
-            <a href="/templates" style={{ color: "#1D4ED8", fontWeight: 700 }}>Templates</a>
+            <a href="/ris" style={{ color: "#1D4ED8", fontWeight: 700 }}>RIS Home</a>
+            <a href="/templates" style={{ color: "#1D4ED8", fontWeight: 700 }}>Template Suite</a>
             <a href="/reception.html" style={{ color: "#1D4ED8", fontWeight: 700 }}>Reception + Billing</a>
             <a href="/radiologist.html" style={{ color: "#1D4ED8", fontWeight: 700 }}>Radiologist</a>
             <a href="/portal" style={{ color: "#1D4ED8", fontWeight: 700 }}>Patient Portal</a>

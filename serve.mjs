@@ -14,7 +14,8 @@ createServer(async (req, res) => {
   try {
     const raw = (req.url || '/').split('?')[0];
     let path = raw === '/' ? '/index.html' : raw;
-    if (path === '/app') path = '/index.html';
+    if (path === '/app') path = '/ris.html';
+    if (path === '/ris') path = '/ris.html';
     if (path === '/templates') path = '/templates.html';
     if (path === '/billing') path = '/reception.html';
     if (path === '/admin') path = '/admin.html';

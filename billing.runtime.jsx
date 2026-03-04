@@ -402,8 +402,8 @@ function App() {
             <div style={{ color: "#475569", marginTop: 4 }}>Module 2: Cash Receipt, Pricing, Payment, Print</div>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <a href="/" style={{ color: "#1D4ED8", fontWeight: 700 }}>Suite</a>
-            <a href="/templates" style={{ color: "#1D4ED8", fontWeight: 700 }}>Templates</a>
+            <a href="/ris" style={{ color: "#1D4ED8", fontWeight: 700 }}>RIS Home</a>
+            <a href="/templates" style={{ color: "#1D4ED8", fontWeight: 700 }}>Template Suite</a>
             <a href="/reception.html" style={{ color: "#1D4ED8", fontWeight: 700 }}>Reception</a>
             <a href="/technician.html" style={{ color: "#1D4ED8", fontWeight: 700 }}>Technician</a>
             <a href="/radiologist.html" style={{ color: "#1D4ED8", fontWeight: 700 }}>Radiologist</a>

@@ -3,7 +3,11 @@
   "rewrites": [
     {
       "source": "/app",
-      "destination": "/index.html"
+      "destination": "/ris.html"
+    },
+    {
+      "source": "/ris",
+      "destination": "/ris.html"
     },
     {
       "source": "/templates",

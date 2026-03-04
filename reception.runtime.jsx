@@ -631,8 +631,8 @@ function App() {
           </div>
 
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <a href="/" style={{ color: "#1D4ED8", fontWeight: 700 }}>Suite</a>
-            <a href="/templates" style={{ color: "#1D4ED8", fontWeight: 700 }}>Templates</a>
+            <a href="/ris" style={{ color: "#1D4ED8", fontWeight: 700 }}>RIS Home</a>
+            <a href="/templates" style={{ color: "#1D4ED8", fontWeight: 700 }}>Template Suite</a>
             <a href="/technician.html" style={{ color: "#1D4ED8", fontWeight: 700 }}>Technician</a>
             <a href="/radiologist.html" style={{ color: "#1D4ED8", fontWeight: 700 }}>Radiologist</a>
             <a href="/portal" style={{ color: "#1D4ED8", fontWeight: 700 }}>Patient Portal</a>

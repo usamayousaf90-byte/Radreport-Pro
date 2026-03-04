@@ -309,8 +309,8 @@ function App() {
             <div style={{ color: "#475569", marginTop: 4 }}>Module 8: Daily KPIs, Modality Usage, Revenue Trend, Referral Analytics</div>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <a href="/" style={{ color: "#1D4ED8", fontWeight: 700 }}>Suite</a>
-            <a href="/templates" style={{ color: "#1D4ED8", fontWeight: 700 }}>Templates</a>
+            <a href="/ris" style={{ color: "#1D4ED8", fontWeight: 700 }}>RIS Home</a>
+            <a href="/templates" style={{ color: "#1D4ED8", fontWeight: 700 }}>Template Suite</a>
             <a href="/reception.html" style={{ color: "#1D4ED8", fontWeight: 700 }}>Reception + Billing</a>
             <a href="/technician.html" style={{ color: "#1D4ED8", fontWeight: 700 }}>Technician</a>
             <a href="/records" style={{ color: "#1D4ED8", fontWeight: 700 }}>Records</a>
