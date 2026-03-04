@@ -2988,6 +2988,20 @@ function FindingField({
 var USER_KEY = "rrp_users_v1";
 var SESSION_KEY = "rrp_session_v1";
 var LOCAL_DRAFT_PREFIX = "rrp_local_drafts_";
+var LOCAL_SHORTCUT_PREFIX = "rrp_local_shortcuts_";
+var EMPTY_SHORTCUT_EDITOR = {
+  lookupCode: "",
+  code: "",
+  title: "",
+  fallback: "",
+  ruleKeywords: "",
+  ruleValue: "",
+  tag: "ab",
+  modalities: "",
+  regionKeywords: "",
+  sectionKeywords: "",
+  fieldKeywords: ""
+};
 
 function seedUsers() {
   var defaults = [
@@ -3034,6 +3048,120 @@ async function cloudSaveDrafts(username, reports) {
   });
   var data = await res.json().catch(function() { return {}; });
   if (!res.ok) throw new Error((data.error && data.error.message) || "Cloud save failed");
+}
+
+function splitCsv(v, toLower) {
+  return String(v || "")
+    .split(",")
+    .map(function(x) { return x.trim(); })
+    .filter(Boolean)
+    .map(function(x) { return toLower ? x.toLowerCase() : x; });
+}
+
+function canonicalModalityName(v) {
+  var x = String(v || "").trim().toLowerCase();
+  if (!x) return "";
+  if (x === "us" || x === "ultrasound") return "Ultrasound";
+  if (x === "ct" || x === "ct scan" || x === "ctscan") return "CT Scan";
+  if (x === "mri" || x === "mr") return "MRI";
+  if (x === "xray" || x === "x-ray" || x === "xr") return "X-Ray";
+  return "";
+}
+
+function sanitizeShortcut(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  var code = normalizeShortcutCode(raw.code);
+  if (!code) return null;
+
+  var tags = ["n", "ab", "i"];
+  var title = String(raw.title || code).trim() || code;
+  var fallback = String(raw.fallback || "").trim();
+  var defaultTag = tags.indexOf(raw.defaultTag) !== -1 ? raw.defaultTag : "ab";
+  var aliases = (Array.isArray(raw.aliases) ? raw.aliases : splitCsv(raw.aliases, false))
+    .map(function(x) { return normalizeShortcutCode(x); })
+    .filter(Boolean);
+  var modalities = (Array.isArray(raw.modalities) ? raw.modalities : splitCsv(raw.modalities, false))
+    .map(canonicalModalityName)
+    .filter(Boolean);
+  var regionKeywords = (Array.isArray(raw.regionKeywords) ? raw.regionKeywords : splitCsv(raw.regionKeywords, true))
+    .map(function(x) { return x.toLowerCase().trim(); })
+    .filter(Boolean);
+  var sectionKeywords = (Array.isArray(raw.sectionKeywords) ? raw.sectionKeywords : splitCsv(raw.sectionKeywords, true))
+    .map(function(x) { return x.toLowerCase().trim(); })
+    .filter(Boolean);
+  var fieldKeywords = (Array.isArray(raw.fieldKeywords) ? raw.fieldKeywords : splitCsv(raw.fieldKeywords, true))
+    .map(function(x) { return x.toLowerCase().trim(); })
+    .filter(Boolean);
+
+  var rules = [];
+  (Array.isArray(raw.rules) ? raw.rules : []).forEach(function(r) {
+    if (!r || typeof r !== "object") return;
+    var value = String(r.value || "").trim();
+    if (!value) return;
+    var any = (Array.isArray(r.any) ? r.any : splitCsv(r.any, true))
+      .map(function(x) { return x.toLowerCase().trim(); })
+      .filter(Boolean);
+    var all = (Array.isArray(r.all) ? r.all : splitCsv(r.all, true))
+      .map(function(x) { return x.toLowerCase().trim(); })
+      .filter(Boolean);
+    var rule = { value: value };
+    if (any.length) rule.any = any;
+    if (all.length) rule.all = all;
+    if (tags.indexOf(r.tag) !== -1) rule.tag = r.tag;
+    rules.push(rule);
+  });
+
+  if (!rules.length && fallback) {
+    rules.push({ any: ["findings"], value: fallback, tag: defaultTag });
+  }
+  if (!rules.length && !fallback) return null;
+
+  return {
+    code: code,
+    title: title,
+    sectionKeywords: sectionKeywords,
+    rules: rules,
+    fallback: fallback || (rules[0] && rules[0].value) || "",
+    modalities: modalities,
+    regionKeywords: regionKeywords,
+    aliases: aliases,
+    defaultTag: defaultTag,
+    fieldKeywords: fieldKeywords
+  };
+}
+
+function loadLocalShortcuts(username) {
+  try {
+    var raw = JSON.parse(localStorage.getItem(LOCAL_SHORTCUT_PREFIX + username) || "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw.map(sanitizeShortcut).filter(Boolean);
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveLocalShortcuts(username, shortcuts) {
+  try {
+    localStorage.setItem(LOCAL_SHORTCUT_PREFIX + username, JSON.stringify((shortcuts || []).map(sanitizeShortcut).filter(Boolean)));
+  } catch (e) {}
+}
+
+function shortcutToEditorDraft(sc) {
+  if (!sc) return Object.assign({}, EMPTY_SHORTCUT_EDITOR);
+  var r = (sc.rules && sc.rules[0]) ? sc.rules[0] : {};
+  return {
+    lookupCode: sc.code || "",
+    code: sc.code || "",
+    title: sc.title || "",
+    fallback: sc.fallback || "",
+    ruleKeywords: (r.any || r.all || []).join(", "),
+    ruleValue: r.value || sc.fallback || "",
+    tag: r.tag || sc.defaultTag || "ab",
+    modalities: (sc.modalities || []).join(", "),
+    regionKeywords: (sc.regionKeywords || []).join(", "),
+    sectionKeywords: (sc.sectionKeywords || []).join(", "),
+    fieldKeywords: (sc.fieldKeywords || []).join(", ")
+  };
 }
 
 const SHORTCUTS = (function() {
@@ -3405,6 +3533,10 @@ function RadReport() {
   var [loginForm, setLoginForm] = useState({ username: "", password: "" });
   var [finalizeAudit, setFinalizeAudit] = useState(null);
   var [finalizedMeta, setFinalizedMeta] = useState(null);
+  var [customShortcuts, setCustomShortcuts] = useState([]);
+  var [shortcutAdminQuery, setShortcutAdminQuery] = useState("");
+  var [shortcutEditor, setShortcutEditor] = useState(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
+  var [shortcutBackStep, setShortcutBackStep] = useState("home");
   var printRef = useRef(null);
 
   /* ── helpers ── */
@@ -3412,6 +3544,33 @@ function RadReport() {
     setToast({ msg: msg, type: type || "info" });
     setTimeout(function(){ setToast(null); }, 5000);
   }, []);
+
+  var openShortcutManager = useCallback(function(backStep) {
+    setShortcutBackStep(backStep || "home");
+    setStep("shortcuts");
+  }, []);
+
+  var resetShortcutEditor = useCallback(function() {
+    setShortcutEditor(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
+  }, []);
+
+  var customShortcutCodeSet = new Set(customShortcuts.map(function(sc) { return normalizeShortcutCode(sc.code); }));
+  var allShortcuts = (function() {
+    var customMap = {};
+    customShortcuts.forEach(function(sc) {
+      customMap[normalizeShortcutCode(sc.code)] = sc;
+    });
+    var merged = SHORTCUTS.map(function(base) {
+      var k = normalizeShortcutCode(base.code);
+      return customMap[k] || base;
+    });
+    customShortcuts.forEach(function(sc) {
+      var k = normalizeShortcutCode(sc.code);
+      var existsInBase = SHORTCUTS.some(function(base) { return normalizeShortcutCode(base.code) === k; });
+      if (!existsInBase) merged.push(sc);
+    });
+    return merged.sort(function(a, b) { return a.code.localeCompare(b.code); });
+  })();
 
   var canFinalize = !!(authUser && (authUser.role === "Admin" || authUser.role === "Radiologist"));
   var canDeleteDraft = canFinalize;
@@ -3561,6 +3720,14 @@ function RadReport() {
     })();
   }, [authUser, showToast]);
 
+  useEffect(function() {
+    if (!authUser || !authUser.username) {
+      setCustomShortcuts([]);
+      return;
+    }
+    setCustomShortcuts(loadLocalShortcuts(authUser.username));
+  }, [authUser]);
+
   var doLogin = useCallback(function() {
     var uname = (loginForm.username || "").trim().toLowerCase();
     var pass = loginForm.password || "";
@@ -3580,6 +3747,9 @@ function RadReport() {
     localStorage.removeItem(SESSION_KEY);
     setAuthUser(null);
     setSavedReports([]);
+    setCustomShortcuts([]);
+    setShortcutAdminQuery("");
+    setShortcutEditor(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
     setActiveDraftId(null);
     setStep("login");
   }, []);
@@ -3674,6 +3844,87 @@ function RadReport() {
     if (activeDraftId === id) setActiveDraftId(null);
   }, [canDeleteDraft, persistAllDrafts, activeDraftId, showToast]);
 
+  var loadShortcutIntoEditor = useCallback(function(sc) {
+    if (!sc) return;
+    setShortcutEditor(shortcutToEditorDraft(sc));
+  }, []);
+
+  var loadShortcutByCode = useCallback(function() {
+    var code = normalizeShortcutCode(shortcutEditor.lookupCode || shortcutEditor.code);
+    if (!code) {
+      showToast("Enter a shortcut code to load", "error");
+      return;
+    }
+    var found = allShortcuts.find(function(sc) { return normalizeShortcutCode(sc.code) === code; });
+    if (!found) {
+      showToast("Shortcut not found: " + code, "error");
+      return;
+    }
+    setShortcutEditor(shortcutToEditorDraft(found));
+    showToast("Loaded shortcut " + found.code, "success");
+  }, [shortcutEditor, allShortcuts, showToast]);
+
+  var saveShortcutFromEditor = useCallback(function() {
+    if (!authUser || !authUser.username) {
+      showToast("Login required to save shortcut edits", "error");
+      return;
+    }
+    var code = normalizeShortcutCode(shortcutEditor.code);
+    if (!code) {
+      showToast("Shortcut code is required", "error");
+      return;
+    }
+    var tag = ["n", "ab", "i"].indexOf(shortcutEditor.tag) !== -1 ? shortcutEditor.tag : "ab";
+    var ruleValue = String(shortcutEditor.ruleValue || "").trim();
+    var fallback = String(shortcutEditor.fallback || "").trim();
+    if (!ruleValue && !fallback) {
+      showToast("Add at least shortcut detail text", "error");
+      return;
+    }
+    var candidate = sanitizeShortcut({
+      code: code,
+      title: shortcutEditor.title || code,
+      fallback: fallback || ruleValue,
+      rules: ruleValue ? [{
+        any: splitCsv(shortcutEditor.ruleKeywords, true).length ? splitCsv(shortcutEditor.ruleKeywords, true) : ["findings"],
+        value: ruleValue,
+        tag: tag
+      }] : [],
+      defaultTag: tag,
+      modalities: splitCsv(shortcutEditor.modalities, false),
+      regionKeywords: splitCsv(shortcutEditor.regionKeywords, true),
+      sectionKeywords: splitCsv(shortcutEditor.sectionKeywords, true),
+      fieldKeywords: splitCsv(shortcutEditor.fieldKeywords, true),
+      aliases: []
+    });
+    if (!candidate) {
+      showToast("Invalid shortcut format", "error");
+      return;
+    }
+    var exists = customShortcuts.some(function(sc) { return normalizeShortcutCode(sc.code) === code; });
+    var next = customShortcuts.filter(function(sc) { return normalizeShortcutCode(sc.code) !== code; });
+    next.unshift(candidate);
+    setCustomShortcuts(next);
+    saveLocalShortcuts(authUser.username, next);
+    showToast((exists ? "Updated " : "Saved ") + candidate.code, "success");
+    setShortcutEditor(shortcutToEditorDraft(candidate));
+  }, [authUser, shortcutEditor, customShortcuts, showToast]);
+
+  var deleteCustomShortcut = useCallback(function(code) {
+    if (!authUser || !authUser.username) return;
+    var k = normalizeShortcutCode(code);
+    var exists = customShortcuts.some(function(sc) { return normalizeShortcutCode(sc.code) === k; });
+    if (!exists) {
+      showToast("Custom shortcut not found: " + k, "error");
+      return;
+    }
+    var next = customShortcuts.filter(function(sc) { return normalizeShortcutCode(sc.code) !== k; });
+    setCustomShortcuts(next);
+    saveLocalShortcuts(authUser.username, next);
+    if (normalizeShortcutCode(shortcutEditor.code) === k) resetShortcutEditor();
+    showToast("Removed custom shortcut " + k, "success");
+  }, [authUser, customShortcuts, shortcutEditor, resetShortcutEditor, showToast]);
+
   useEffect(function() {
     seedUsers();
     var all = loadUsers();
@@ -3717,7 +3968,7 @@ function RadReport() {
   var togT = function(sl, f, t){ setTags(function(p){ var n = Object.assign({}, p); n[sl+"__"+f] = p[sl+"__"+f] === t ? null : t; return n; }); };
   var setLD = function(k, v){ setAiLoad(function(p){ var n = Object.assign({}, p); n[k] = v; return n; }); };
   var getFieldShortcuts = useCallback(function(secLabel, fieldLabel) {
-    return SHORTCUTS.filter(function(sc) {
+    return allShortcuts.filter(function(sc) {
       return shortcutAppliesToContext(sc, modality, region, secLabel, fieldLabel);
     }).sort(function(a, b) {
       var aSec = sectionKeywordMatch(a, secLabel) ? 1 : 0;
@@ -3728,12 +3979,12 @@ function RadReport() {
       if (aHit !== bHit) return bHit - aHit;
       return a.code.localeCompare(b.code);
     });
-  }, [modality, region]);
+  }, [allShortcuts, modality, region]);
 
   var applyFieldShortcut = useCallback(function(secLabel, fieldLabel, rawCode) {
     var code = normalizeShortcutCode(rawCode);
     if (!code) { showToast("Enter a shortcut code first", "error"); return; }
-    var sc = SHORTCUTS.find(function(s) {
+    var sc = allShortcuts.find(function(s) {
       if (normalizeShortcutCode(s.code) === code) return true;
       return (s.aliases || []).some(function(a) { return normalizeShortcutCode(a) === code; });
     });
@@ -3766,7 +4017,7 @@ function RadReport() {
       });
     }
     showToast("⚡ " + sc.code + " applied to " + fieldLabel, "success");
-  }, [modality, region, showToast]);
+  }, [allShortcuts, modality, region, showToast]);
 
   var expandField = useCallback(async function(sl, field) {
     var cur = getF(sl, field).trim();
@@ -3895,6 +4146,11 @@ function RadReport() {
     var hay = [d.label || "", patientName, d.modality || "", d.region || "", d.updatedBy || ""].join(" ").toLowerCase();
     return hay.indexOf(draftQ) !== -1;
   });
+  var shortcutQ = shortcutAdminQuery.trim().toLowerCase();
+  var shortcutManagerRows = (shortcutQ ? allShortcuts.filter(function(sc) {
+    var hay = [sc.code || "", sc.title || "", (sc.fallback || ""), (sc.regionKeywords || []).join(" "), (sc.sectionKeywords || []).join(" "), (sc.fieldKeywords || []).join(" ")].join(" ").toLowerCase();
+    return hay.indexOf(shortcutQ) !== -1;
+  }) : customShortcuts).slice(0, 120);
 
   if (step === "login") return (
     <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:"linear-gradient(140deg,#06101b,#0f2440)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -3960,6 +4216,7 @@ function RadReport() {
               {authUser.username} · {authUser.role}
             </div>
           )}
+          <button style={obtn("#22D3EE")} onClick={function(){ openShortcutManager("home"); }}>Shortcut Manager</button>
           <button style={obtn("rgba(255,255,255,.8)")} onClick={doLogout}>Logout</button>
           {[["#6366F1","#A5B4FC","AI ENGINE","ONLINE"],["#0F766E","#2DD4BF","VOICE","READY"]].map(function(p,i){return(
             <div key={i} style={{display:"flex",alignItems:"center",gap:7,padding:"8px 16px",borderRadius:24,background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)",backdropFilter:"blur(8px)"}}>
@@ -4281,6 +4538,160 @@ function RadReport() {
     </div>
   );
 
+  /* ══ SHORTCUT MANAGER ══ */
+  if (step === "shortcuts") return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.bg,minHeight:"100vh"}}>
+      <style>{CSS}</style>
+      <Toast msg={toast&&toast.msg} type={toast&&toast.type} onClose={function(){setToast(null);}} />
+      <AppHdr
+        onBack
+        backTo={shortcutBackStep || "home"}
+        setStep={setStep}
+        sub="Shortcut Manager"
+        right={<div style={{display:"flex",gap:10,alignItems:"center"}}>
+          <span style={{fontSize:12,color:"rgba(255,255,255,.55)"}}>Custom: {customShortcuts.length} · Total active: {allShortcuts.length}</span>
+          <button style={obtn("#fff")} onClick={function(){ setStep(shortcutBackStep || "home"); }}>Back</button>
+        </div>}
+      />
+      <div style={pg}>
+        <div style={{marginBottom:14,padding:"12px 14px",borderRadius:10,background:"#EFF6FF",border:"1px solid #BFDBFE",color:"#1E3A8A",fontSize:12,lineHeight:1.6}}>
+          Edit any shortcut detail here. Saving creates/updates your personal shortcut version and it applies in all report fields immediately.
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"minmax(360px,1.1fr) minmax(320px,.9fr)",gap:16}}>
+          <div style={crd}>
+            <div style={cHd(C.col)}>
+              <span style={{fontSize:19}}>🛠️</span>
+              <b style={{color:C.navy,fontSize:15}}>Create / Update Shortcut</b>
+            </div>
+            <div style={{padding:18}}>
+              <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10}}>
+                <input
+                  className="ri"
+                  style={inp()}
+                  placeholder="Load existing by code (e.g. FL-1)"
+                  value={shortcutEditor.lookupCode}
+                  onChange={function(e){ setShortcutEditor(function(p){ return Object.assign({}, p, { lookupCode: e.target.value }); }); }}
+                />
+                <button style={btn(C.col, "#fff", {padding:"9px 12px",fontSize:12})} onClick={loadShortcutByCode}>Load</button>
+                <button style={obtn(C.soft)} onClick={resetShortcutEditor}>Clear</button>
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                <div>
+                  <label style={lbl}>Shortcut Code</label>
+                  <input className="ri" style={inp()} placeholder="e.g. CLD" value={shortcutEditor.code} onChange={function(e){ setShortcutEditor(function(p){ return Object.assign({}, p, { code: e.target.value }); }); }} />
+                </div>
+                <div>
+                  <label style={lbl}>Title</label>
+                  <input className="ri" style={inp()} placeholder="Shortcut title" value={shortcutEditor.title} onChange={function(e){ setShortcutEditor(function(p){ return Object.assign({}, p, { title: e.target.value }); }); }} />
+                </div>
+              </div>
+
+              <div style={{marginBottom:10}}>
+                <label style={lbl}>Fallback Detail Text</label>
+                <textarea className="ri" style={ta({minHeight:74})} placeholder="Main sentence to apply when rule keyword is not matched..." value={shortcutEditor.fallback} onChange={function(e){ setShortcutEditor(function(p){ return Object.assign({}, p, { fallback: e.target.value }); }); }} />
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                <div>
+                  <label style={lbl}>Rule Keywords (comma)</label>
+                  <input className="ri" style={inp()} placeholder="e.g. findings, lesion, mass" value={shortcutEditor.ruleKeywords} onChange={function(e){ setShortcutEditor(function(p){ return Object.assign({}, p, { ruleKeywords: e.target.value }); }); }} />
+                </div>
+                <div>
+                  <label style={lbl}>Tag</label>
+                  <select className="ri" style={inp({cursor:"pointer"})} value={shortcutEditor.tag} onChange={function(e){ setShortcutEditor(function(p){ return Object.assign({}, p, { tag: e.target.value }); }); }}>
+                    <option value="ab">ABNORMAL</option>
+                    <option value="n">NORMAL</option>
+                    <option value="i">INFO</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{marginBottom:10}}>
+                <label style={lbl}>Rule Value Text</label>
+                <textarea className="ri" style={ta({minHeight:74})} placeholder="Detailed sentence for matching fields..." value={shortcutEditor.ruleValue} onChange={function(e){ setShortcutEditor(function(p){ return Object.assign({}, p, { ruleValue: e.target.value }); }); }} />
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                <div>
+                  <label style={lbl}>Modalities (comma)</label>
+                  <input className="ri" style={inp()} placeholder="Ultrasound, CT Scan, MRI, X-Ray" value={shortcutEditor.modalities} onChange={function(e){ setShortcutEditor(function(p){ return Object.assign({}, p, { modalities: e.target.value }); }); }} />
+                </div>
+                <div>
+                  <label style={lbl}>Region Keywords (comma)</label>
+                  <input className="ri" style={inp()} placeholder="abdomen, cns, chest..." value={shortcutEditor.regionKeywords} onChange={function(e){ setShortcutEditor(function(p){ return Object.assign({}, p, { regionKeywords: e.target.value }); }); }} />
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                <div>
+                  <label style={lbl}>Section Keywords (comma)</label>
+                  <input className="ri" style={inp()} placeholder="liver, spine, lung..." value={shortcutEditor.sectionKeywords} onChange={function(e){ setShortcutEditor(function(p){ return Object.assign({}, p, { sectionKeywords: e.target.value }); }); }} />
+                </div>
+                <div>
+                  <label style={lbl}>Field Keywords (comma)</label>
+                  <input className="ri" style={inp()} placeholder="impression, findings..." value={shortcutEditor.fieldKeywords} onChange={function(e){ setShortcutEditor(function(p){ return Object.assign({}, p, { fieldKeywords: e.target.value }); }); }} />
+                </div>
+              </div>
+
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                <button style={obtn(C.soft)} onClick={resetShortcutEditor}>Reset</button>
+                <button style={btn(C.col)} onClick={saveShortcutFromEditor}>Save Shortcut</button>
+              </div>
+            </div>
+          </div>
+
+          <div style={crd}>
+            <div style={cHd("#0D2137")}>
+              <span style={{fontSize:19}}>📚</span>
+              <b style={{color:C.navy,fontSize:15}}>Shortcut Browser</b>
+            </div>
+            <div style={{padding:18}}>
+              <input className="ri" style={inp({marginBottom:10})} placeholder="Search code, title, region..." value={shortcutAdminQuery} onChange={function(e){ setShortcutAdminQuery(e.target.value); }} />
+              <div style={{fontSize:11,color:C.soft,marginBottom:10}}>
+                {shortcutQ ? ("Showing " + shortcutManagerRows.length + " result(s).") : "Showing your custom shortcuts. Search to browse all active shortcuts."}
+              </div>
+              {!shortcutManagerRows.length ? (
+                <div style={{padding:"14px 12px",border:"1px dashed "+C.bdr,borderRadius:10,color:C.soft,fontSize:12}}>
+                  No shortcuts found for this filter.
+                </div>
+              ) : (
+                <div style={{display:"grid",gap:8,maxHeight:560,overflow:"auto",paddingRight:4}}>
+                  {shortcutManagerRows.map(function(sc) {
+                    var k = normalizeShortcutCode(sc.code);
+                    var isCustom = customShortcutCodeSet.has(k);
+                    var preview = (sc.fallback || ((sc.rules && sc.rules[0] && sc.rules[0].value) || "") || "").trim();
+                    if (preview.length > 110) preview = preview.slice(0, 110) + "…";
+                    return (
+                      <div key={sc.code} style={{border:"1px solid "+(isCustom ? "#BFDBFE" : C.bdr),borderRadius:10,padding:"10px 12px",background:isCustom ? "#EFF6FF" : "#fff"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:5}}>
+                          <div style={{fontWeight:800,fontSize:12,color:C.navy}}>{sc.code}</div>
+                          <span style={{fontSize:10,padding:"2px 8px",borderRadius:20,background:isCustom ? "#DBEAFE" : "#F3F4F6",color:isCustom ? "#1D4ED8" : "#475569",fontWeight:700}}>
+                            {isCustom ? "CUSTOM" : "BASE"}
+                          </span>
+                        </div>
+                        <div style={{fontSize:12,fontWeight:700,color:"#334155",marginBottom:4}}>{sc.title || sc.code}</div>
+                        <div style={{fontSize:11,color:"#5A7090",lineHeight:1.5,marginBottom:8}}>{preview || "No detail text"}</div>
+                        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                          <button style={btn(C.col, "#fff", {padding:"5px 10px",fontSize:11})} onClick={function(){ loadShortcutIntoEditor(sc); }}>Edit</button>
+                          {!isCustom && (
+                            <button style={obtn(C.soft)} onClick={function(){ loadShortcutIntoEditor(sc); }}>Clone as Custom</button>
+                          )}
+                          {isCustom && (
+                            <button style={obtn("#B91C1C")} onClick={function(){ deleteCustomShortcut(sc.code); }}>Delete</button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   /* ══ REGION ══ */
   if (step === "region") return (
     <div style={{fontFamily:"'DM Sans',sans-serif",background:C.bg,minHeight:"100vh"}}>
@@ -4356,6 +4767,7 @@ function RadReport() {
         right={<div style={{display:"flex",gap:10,alignItems:"center"}}>
           <span style={{fontSize:12,color:"rgba(255,255,255,.5)"}}>{patient.name}</span>
           <button style={obtn("#fff")} onClick={function(){ setStep("drafts"); }}>Drafts</button>
+          <button style={obtn("#fff")} onClick={function(){ openShortcutManager("template"); }}>Shortcuts</button>
           <button style={obtn("#fff")} onClick={function(){ var nm = window.prompt("Draft name", patient.name || "Untitled draft"); if (nm !== null) saveDraft(nm); }}>Save Draft</button>
           <button style={btn(tpl.accent)} onClick={function(){setStep("impression");}}>Impression →</button>
         </div>}
@@ -4384,7 +4796,7 @@ function RadReport() {
           </div>
         )}
         <datalist id="rrp-shortcuts-list">
-          {SHORTCUTS.map(function(sc){ return <option key={sc.code} value={sc.code}>{sc.title}</option>; })}
+          {allShortcuts.map(function(sc){ return <option key={sc.code} value={sc.code}>{sc.title}</option>; })}
         </datalist>
 
         {sections.map(function(sec) {
