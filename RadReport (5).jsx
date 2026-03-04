@@ -2891,7 +2891,11 @@ function AIBtn({ onClick, loading, disabled }) {
 
 /* FindingField — outside main for stable identity.
    Holds a ref to its <input> so we can focus it for OS dictation. */
-function FindingField({ sl, field, val, tag, aiLoading, isRec, isDictating, activeKey, dictKey, voiceStart, voiceStop, cancelDictation, onChange, onTag, onAI }) {
+function FindingField({
+  sl, field, val, tag, aiLoading, isRec, isDictating, activeKey, dictKey,
+  voiceStart, voiceStop, cancelDictation, onChange, onTag, onAI,
+  shortcutValue, shortcutChoices, onShortcutChange, onShortcutApply
+}) {
   var inputRef = useRef(null);
   var fKey = sl + "__" + field;
   var border = "#DDE5EF", bg = "#FAFCFF";
@@ -2930,6 +2934,36 @@ function FindingField({ sl, field, val, tag, aiLoading, isRec, isDictating, acti
       {isDictating && (
         <DictationTip fieldLabel={field} inputRef={inputRef} onDone={function(){ cancelDictation(); if(inputRef.current) inputRef.current.focus(); }} />
       )}
+      <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:8}}>
+        <input
+          list="rrp-shortcuts-list"
+          className="ri"
+          style={{flex:"1 1 240px",maxWidth:360,padding:"6px 10px",border:"1px solid #CBD5E1",borderRadius:7,fontSize:12,color:"#1A2B3C",background:"#F8FAFC",outline:"none"}}
+          placeholder="Shortcut code (e.g. FL-1, CLD)"
+          value={shortcutValue || ""}
+          onChange={function(e){ onShortcutChange(e.target.value); }}
+        />
+        <button
+          style={{padding:"6px 10px",borderRadius:8,border:"none",background:"#0D2137",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}
+          onClick={function(){ onShortcutApply(shortcutValue || ""); }}
+        >Apply</button>
+        <span style={{fontSize:10,color:"#5A7090"}}>{(shortcutChoices || []).length} codes</span>
+      </div>
+      <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:6}}>
+        {(shortcutChoices || []).slice(0, 8).map(function(sc){
+          return (
+            <span
+              key={sc.code}
+              style={{fontSize:10,padding:"3px 8px",borderRadius:20,background:"#EEF4FF",border:"1px solid #C7D2FE",color:"#334155",cursor:"pointer",fontWeight:700}}
+              title={sc.title}
+              onClick={function(){
+                onShortcutChange(sc.code);
+                onShortcutApply(sc.code);
+              }}
+            >{sc.code}</span>
+          );
+        })}
+      </div>
       <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:6}}>
         {(FS[field.toLowerCase()] || FS["_default"]).map(function(s,i){
           var isN  = s.k === "n";
@@ -3004,7 +3038,7 @@ async function cloudSaveDrafts(username, reports) {
 
 const SHORTCUTS = (function() {
   var out = [];
-  function add(code, title, sectionKeywords, rules, fallback, modalities, regionKeywords, aliases, defaultTag) {
+  function add(code, title, sectionKeywords, rules, fallback, modalities, regionKeywords, aliases, defaultTag, fieldKeywords) {
     out.push({
       code: code,
       title: title,
@@ -3014,7 +3048,8 @@ const SHORTCUTS = (function() {
       modalities: modalities || [],
       regionKeywords: regionKeywords || [],
       aliases: aliases || [],
-      defaultTag: defaultTag || "ab"
+      defaultTag: defaultTag || "ab",
+      fieldKeywords: fieldKeywords || []
     });
   }
 
@@ -3224,8 +3259,88 @@ const SHORTCUTS = (function() {
   add("BREECH", "Breech presentation", ["presentation", "fetal"], [{ any: ["presentation", "lie"], value: "Fetus is in breech presentation.", tag: "ab" }], "Breech presentation.", ["Ultrasound"], ["ob", "preg"]);
   add("TWINS-MCDA", "Twin pregnancy MCDA", ["fetal", "placenta", "cord"], [{ any: ["fetal number", "chorionicity"], value: "Twin pregnancy with monochorionic diamniotic chorionicity.", tag: "ab" }], "MCDA twin pregnancy.", ["Ultrasound"], ["ob", "preg"]);
 
-  if (out.length < 100) {
-    console.warn("Shortcut library has fewer than 100 entries:", out.length);
+  var modalityDefs = [
+    { code: "US", label: "Ultrasound" },
+    { code: "CT", label: "CT Scan" },
+    { code: "MR", label: "MRI" },
+    { code: "XR", label: "X-Ray" }
+  ];
+
+  var regionDefs = [
+    { code: "CNS", label: "CNS", keywords: ["cns", "brain", "intracranial"], sectionKeywords: ["brain", "cns", "ventricle", "intracranial"] },
+    { code: "HEAD", label: "Head", keywords: ["head", "skull", "sinus", "face"], sectionKeywords: ["head", "skull", "sinus", "orbit"] },
+    { code: "NECK", label: "Neck", keywords: ["neck", "thyroid", "larynx", "pharynx"], sectionKeywords: ["neck", "thyroid", "node", "larynx"] },
+    { code: "CHEST", label: "Chest", keywords: ["chest", "lung", "thorax", "pleura"], sectionKeywords: ["lung", "pleura", "mediastinum", "chest"] },
+    { code: "CARD", label: "Cardiac", keywords: ["cardiac", "heart"], sectionKeywords: ["heart", "cardiac", "pericard"] },
+    { code: "ABD", label: "Abdomen", keywords: ["abdomen", "hepato", "liver", "pancreas"], sectionKeywords: ["abdomen", "liver", "pancreas", "gallbladder", "spleen"] },
+    { code: "PELV", label: "Pelvis", keywords: ["pelvis", "uterus", "ovary", "prostate", "bladder"], sectionKeywords: ["pelvis", "uterus", "ovary", "prostate", "bladder"] },
+    { code: "GU", label: "Genitourinary", keywords: ["renal", "kidney", "urinary", "uro"], sectionKeywords: ["kidney", "renal", "ureter", "bladder"] },
+    { code: "GI", label: "Gastrointestinal", keywords: ["bowel", "colon", "small bowel", "gi"], sectionKeywords: ["bowel", "colon", "ileum", "rectum", "stomach"] },
+    { code: "ULIMB", label: "Upper limb", keywords: ["upper limb", "shoulder", "arm", "forearm", "wrist", "hand"], sectionKeywords: ["humerus", "radius", "ulna", "wrist", "hand", "shoulder"] },
+    { code: "LLIMB", label: "Lower limb", keywords: ["lower limb", "hip", "thigh", "knee", "leg", "ankle", "foot"], sectionKeywords: ["femur", "tibia", "fibula", "knee", "ankle", "foot"] },
+    { code: "MSK", label: "MSK", keywords: ["msk", "joint", "musculoskeletal"], sectionKeywords: ["joint", "muscle", "tendon", "ligament", "bone"] },
+    { code: "SPINE", label: "Spine", keywords: ["spine", "cervical", "thoracic", "lumbar"], sectionKeywords: ["spine", "vertebra", "disc", "canal"] },
+    { code: "VASC", label: "Vascular", keywords: ["vascular", "artery", "vein", "doppler"], sectionKeywords: ["artery", "vein", "vascular", "doppler"] },
+    { code: "BREAST", label: "Breast", keywords: ["breast", "axilla"], sectionKeywords: ["breast", "axilla", "duct"] },
+    { code: "OBG", label: "Obstetric", keywords: ["preg", "obstetric", "fetal", "placenta"], sectionKeywords: ["fetal", "placenta", "amniotic", "uterine"] },
+    { code: "ONC", label: "Malignancy", keywords: ["malignancy", "oncology", "tumor", "metast"], sectionKeywords: ["mass", "lesion", "node", "metastasis", "tumour"] },
+    { code: "TRA", label: "Trauma", keywords: ["trauma", "injury", "accident", "fracture"], sectionKeywords: ["fracture", "hematoma", "laceration", "trauma"] },
+    { code: "PEDS", label: "Pediatric", keywords: ["pediatric", "paediatric", "child"], sectionKeywords: ["growth", "development", "pediatric"] },
+    { code: "POSTOP", label: "Postoperative", keywords: ["post", "surgery", "operative"], sectionKeywords: ["post", "surgical", "anastomosis", "drain"] }
+  ];
+
+  var patternDefs = [
+    { code: "NORM", title: "No acute abnormality", text: "No acute {region} abnormality is identified on {modality}.", tag: "n", fieldKeywords: ["impression", "conclusion", "summary", "overall"] },
+    { code: "MILD", title: "Mild nonspecific change", text: "Mild nonspecific {region} parenchymal change is noted without critical feature.", tag: "ab", fieldKeywords: ["findings", "parenchyma", "signal", "echotexture"] },
+    { code: "MOD", title: "Moderate abnormality", text: "Moderate {region} abnormality is seen and should be correlated clinically.", tag: "ab", fieldKeywords: ["findings", "abnormality", "assessment"] },
+    { code: "SEV", title: "Severe abnormality", text: "Severe {region} abnormality is present with significant disease burden.", tag: "ab", fieldKeywords: ["findings", "severity", "assessment"] },
+    { code: "INF", title: "Infective process", text: "Imaging features are suggestive of infective/inflammatory process in the {region}.", tag: "ab", fieldKeywords: ["infection", "inflammation", "changes", "findings"] },
+    { code: "ABSC", title: "Abscess/collection", text: "Loculated collection in the {region} is suspicious for abscess.", tag: "ab", fieldKeywords: ["collection", "abscess", "fluid", "lesion"] },
+    { code: "MASS", title: "Mass lesion", text: "Focal mass lesion is identified in the {region}; further characterisation is recommended.", tag: "ab", fieldKeywords: ["mass", "lesion", "focal", "nodule"] },
+    { code: "MALIG", title: "Suspicious malignancy", text: "Appearance of the {region} lesion is suspicious for malignancy.", tag: "ab", fieldKeywords: ["mass", "lesion", "tumor", "tumour", "node"] },
+    { code: "METS", title: "Metastatic pattern", text: "Multiple lesions in the {region} are suspicious for metastatic disease.", tag: "ab", fieldKeywords: ["metast", "lesion", "nodes", "deposit"] },
+    { code: "TRAUMA", title: "Traumatic injury", text: "Post-traumatic injury pattern is seen in the {region}.", tag: "ab", fieldKeywords: ["trauma", "injury", "laceration", "hematoma"] },
+    { code: "FRACT", title: "Fracture pattern", text: "Fracture line with adjacent soft tissue swelling is seen in the {region}.", tag: "ab", fieldKeywords: ["fracture", "alignment", "cortex"] },
+    { code: "HEM", title: "Hemorrhage", text: "Hyperdense/hemorrhagic focus is noted in the {region}.", tag: "ab", fieldKeywords: ["hemorrhage", "haemorrhage", "bleed", "hematoma"] },
+    { code: "EDEMA", title: "Edematous change", text: "Edematous change is present in the {region}.", tag: "ab", fieldKeywords: ["edema", "oedema", "marrow", "swelling"] },
+    { code: "EFF", title: "Effusion", text: "Fluid collection/effusion is present involving the {region}.", tag: "ab", fieldKeywords: ["effusion", "fluid", "collection"] },
+    { code: "OBSTR", title: "Obstruction", text: "Obstructive pattern is identified in the {region}.", tag: "ab", fieldKeywords: ["obstruction", "dilatation", "calibre", "lumen"] },
+    { code: "STEN", title: "Stenosis", text: "Significant narrowing/stenosis is present in the {region}.", tag: "ab", fieldKeywords: ["stenosis", "narrowing", "velocity", "foraminal"] },
+    { code: "THROMB", title: "Thrombus", text: "Intraluminal thrombus is identified in the {region} vascular bed.", tag: "ab", fieldKeywords: ["thrombus", "flow", "patency", "venous", "arterial"] },
+    { code: "DISSEC", title: "Dissection", text: "Dissection flap involving the {region} vasculature is suspected.", tag: "ab", fieldKeywords: ["dissection", "flap", "intimal"] },
+    { code: "CYST", title: "Simple cystic lesion", text: "Simple cystic lesion is seen in the {region}.", tag: "ab", fieldKeywords: ["cyst", "lesion", "anechoic"] },
+    { code: "CALC", title: "Calcific focus", text: "Calcific focus is noted in the {region}.", tag: "ab", fieldKeywords: ["calcification", "stone", "calcific"] },
+    { code: "DEGEN", title: "Degenerative change", text: "Degenerative changes are noted in the {region}.", tag: "ab", fieldKeywords: ["degenerative", "joint", "disc", "osteophyte"] },
+    { code: "POSTOP", title: "Postoperative change", text: "Expected postoperative changes are seen in the {region} without acute complication.", tag: "i", fieldKeywords: ["post", "operative", "surgical", "anastomosis"] },
+    { code: "FOLLOW", title: "Follow-up recommendation", text: "Interval follow-up imaging of the {region} is recommended for stability assessment.", tag: "i", fieldKeywords: ["recommend", "follow", "plan"] },
+    { code: "URG", title: "Urgent critical finding", text: "Critical {region} finding requires urgent clinical correlation and immediate communication.", tag: "ab", fieldKeywords: ["critical", "urgent", "impression", "summary"] },
+    { code: "BENIGN", title: "Likely benign", text: "The {region} finding appears likely benign based on current imaging features.", tag: "i", fieldKeywords: ["lesion", "mass", "impression", "assessment"] }
+  ];
+
+  modalityDefs.forEach(function(mod) {
+    regionDefs.forEach(function(reg) {
+      patternDefs.forEach(function(pat) {
+        var code = "G-" + mod.code + "-" + reg.code + "-" + pat.code;
+        var text = pat.text.replace(/\{region\}/g, reg.label.toLowerCase()).replace(/\{modality\}/g, mod.label);
+        var defaultRuleKeywords = pat.fieldKeywords && pat.fieldKeywords.length ? pat.fieldKeywords : ["findings", "impression"];
+        add(
+          code,
+          mod.label + " " + reg.label + " " + pat.title,
+          reg.sectionKeywords,
+          [{ any: defaultRuleKeywords, value: text, tag: pat.tag }],
+          text,
+          [mod.label],
+          reg.keywords,
+          [mod.code + "-" + reg.code + "-" + pat.code],
+          pat.tag,
+          pat.fieldKeywords
+        );
+      });
+    });
+  });
+
+  if (out.length < 1000) {
+    console.warn("Shortcut library has fewer than 1000 entries:", out.length);
   }
   return out;
 })();
@@ -3234,17 +3349,25 @@ function normalizeShortcutCode(v) {
   return String(v || "").toUpperCase().replace(/\s+/g, "").trim();
 }
 
-function shortcutAppliesToContext(sc, modality, region, sectionLabel) {
+function shortcutAppliesToContext(sc, modality, region, sectionLabel, fieldLabel) {
   if (sc.modalities && sc.modalities.length && sc.modalities.indexOf(modality) === -1) return false;
   if (sc.regionKeywords && sc.regionKeywords.length) {
     var r = String(region || "").toLowerCase();
     if (!sc.regionKeywords.some(function(k) { return r.indexOf(k) !== -1; })) return false;
   }
-  if (sc.sectionKeywords && sc.sectionKeywords.length) {
-    var s = String(sectionLabel || "").toLowerCase();
-    if (!sc.sectionKeywords.some(function(k) { return s.indexOf(k) !== -1; })) return false;
-  }
   return true;
+}
+
+function sectionKeywordMatch(sc, sectionLabel) {
+  if (!sc.sectionKeywords || !sc.sectionKeywords.length) return false;
+  var s = String(sectionLabel || "").toLowerCase();
+  return sc.sectionKeywords.some(function(k) { return s.indexOf(k) !== -1; });
+}
+
+function fieldKeywordMatch(sc, fieldLabel) {
+  if (!sc.fieldKeywords || !sc.fieldKeywords.length) return false;
+  var f = String(fieldLabel || "").toLowerCase();
+  return sc.fieldKeywords.some(function(k) { return f.indexOf(k) !== -1; });
 }
 
 function fieldMatchesRule(fieldName, rule) {
@@ -3272,7 +3395,7 @@ function RadReport() {
   var [aiLoad, setAiLoad]           = useState({});
   var [toast, setToast]             = useState(null);
   var [templateQuery, setTemplateQuery] = useState("");
-  var [secShortcutInput, setSecShortcutInput] = useState({});
+  var [fieldShortcutInput, setFieldShortcutInput] = useState({});
   var [draftQuery, setDraftQuery] = useState("");
   var [savedReports, setSavedReports] = useState([]);
   var [activeDraftId, setActiveDraftId] = useState(null);
@@ -3593,13 +3716,21 @@ function RadReport() {
   var getT = function(sl, f){ return tags[sl+"__"+f]; };
   var togT = function(sl, f, t){ setTags(function(p){ var n = Object.assign({}, p); n[sl+"__"+f] = p[sl+"__"+f] === t ? null : t; return n; }); };
   var setLD = function(k, v){ setAiLoad(function(p){ var n = Object.assign({}, p); n[k] = v; return n; }); };
-  var getSectionShortcuts = function(sec) {
+  var getFieldShortcuts = useCallback(function(secLabel, fieldLabel) {
     return SHORTCUTS.filter(function(sc) {
-      return shortcutAppliesToContext(sc, modality, region, sec.label);
+      return shortcutAppliesToContext(sc, modality, region, secLabel, fieldLabel);
+    }).sort(function(a, b) {
+      var aSec = sectionKeywordMatch(a, secLabel) ? 1 : 0;
+      var bSec = sectionKeywordMatch(b, secLabel) ? 1 : 0;
+      var aHit = fieldKeywordMatch(a, fieldLabel) ? 1 : 0;
+      var bHit = fieldKeywordMatch(b, fieldLabel) ? 1 : 0;
+      if (aSec !== bSec) return bSec - aSec;
+      if (aHit !== bHit) return bHit - aHit;
+      return a.code.localeCompare(b.code);
     });
-  };
+  }, [modality, region]);
 
-  var applySectionShortcut = useCallback(function(sec, rawCode) {
+  var applyFieldShortcut = useCallback(function(secLabel, fieldLabel, rawCode) {
     var code = normalizeShortcutCode(rawCode);
     if (!code) { showToast("Enter a shortcut code first", "error"); return; }
     var sc = SHORTCUTS.find(function(s) {
@@ -3610,39 +3741,32 @@ function RadReport() {
       showToast("Shortcut not found: " + code, "error");
       return;
     }
-    if (!shortcutAppliesToContext(sc, modality, region, sec.label)) {
-      showToast("Shortcut " + sc.code + " is not applicable to this section", "error");
+    if (!shortcutAppliesToContext(sc, modality, region, secLabel, fieldLabel)) {
+      showToast("Shortcut " + sc.code + " is not applicable here", "error");
       return;
     }
-
-    var changed = 0;
-    var fNext = Object.assign({}, findings);
-    var tNext = Object.assign({}, tags);
-    sec.fields.forEach(function(field) {
-      var key = sec.label + "__" + field;
-      var rule = (sc.rules || []).find(function(r) { return fieldMatchesRule(field, r); });
-      if (rule) {
-        fNext[key] = rule.value;
-        if (rule.tag === "n" || rule.tag === "ab" || rule.tag === "i") tNext[key] = rule.tag;
-        changed++;
-      }
+    var rule = (sc.rules || []).find(function(r) { return fieldMatchesRule(fieldLabel, r); });
+    var text = (rule && rule.value) ? rule.value : (sc.fallback || "");
+    if (!text) {
+      showToast("Shortcut has no mapped text for this field", "info");
+      return;
+    }
+    var key = secLabel + "__" + fieldLabel;
+    setFindings(function(prev) {
+      var next = Object.assign({}, prev);
+      next[key] = text;
+      return next;
     });
-
-    if (!changed && sec.fields.length && sc.fallback) {
-      var fk = sec.label + "__" + sec.fields[0];
-      fNext[fk] = sc.fallback;
-      if (sc.defaultTag) tNext[fk] = sc.defaultTag;
-      changed = 1;
+    var resolvedTag = rule && rule.tag ? rule.tag : sc.defaultTag;
+    if (resolvedTag === "n" || resolvedTag === "ab" || resolvedTag === "i") {
+      setTags(function(prev) {
+        var next = Object.assign({}, prev);
+        next[key] = resolvedTag;
+        return next;
+      });
     }
-    if (!changed) {
-      showToast("No matching fields for shortcut in this section", "info");
-      return;
-    }
-
-    setFindings(fNext);
-    setTags(tNext);
-    showToast("⚡ " + sc.code + " applied (" + changed + " field" + (changed > 1 ? "s" : "") + ")", "success");
-  }, [modality, region, findings, tags, showToast]);
+    showToast("⚡ " + sc.code + " applied to " + fieldLabel, "success");
+  }, [modality, region, showToast]);
 
   var expandField = useCallback(async function(sl, field) {
     var cur = getF(sl, field).trim();
@@ -3719,7 +3843,7 @@ function RadReport() {
     setStep("home"); setModality(null); setRegion(null);
     setPatient({name:"",age:"",sex:"Male",refBy:"",clinicalInfo:"",studyDate:new Date().toISOString().split("T")[0],reportingDoc:"",institution:""});
     setFindings({}); setTags({}); setImpression(""); setRec(""); setUrgency("Routine"); setAiLoad({});
-    setSecShortcutInput({});
+    setFieldShortcutInput({});
     setActiveDraftId(null);
     setFinalizeAudit(null);
     setFinalizedMeta(null);
@@ -4265,8 +4389,6 @@ function RadReport() {
 
         {sections.map(function(sec) {
           var sk = "sec__"+sec.label;
-          var secShortcuts = getSectionShortcuts(sec);
-          var shortcutValue = secShortcutInput[sk] || "";
           return (
             <div key={sec.label} style={crd}>
               <div style={cHd(C.col)}>
@@ -4280,42 +4402,10 @@ function RadReport() {
                 }} style={{padding:"4px 10px",borderRadius:20,fontSize:11,fontWeight:700,cursor:"pointer",border:"none",background:C.bdr,color:C.soft}}>✓ All Normal</button>
               </div>
               <div style={{padding:20}}>
-                <div style={{marginBottom:14,padding:"10px 12px",borderRadius:10,background:"#F8FAFF",border:"1px solid #DDE5EF"}}>
-                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                    <input
-                      list="rrp-shortcuts-list"
-                      className="ri"
-                      style={inp({maxWidth:270,padding:"7px 10px",fontSize:12})}
-                      placeholder="Shortcut code e.g. FL-1, CLD, PNA-RUL"
-                      value={shortcutValue}
-                      onChange={function(e){
-                        var v = e.target.value;
-                        setSecShortcutInput(function(p){ var n = Object.assign({}, p); n[sk] = v; return n; });
-                      }}
-                    />
-                    <button
-                      style={btn(C.col, "#fff", {padding:"7px 12px",fontSize:12})}
-                      onClick={function(){ applySectionShortcut(sec, shortcutValue); }}
-                    >Apply Shortcut</button>
-                    <span style={{fontSize:11,color:C.soft}}>{secShortcuts.length} available</span>
-                  </div>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-                    {secShortcuts.slice(0,10).map(function(sc){
-                      return (
-                        <span key={sc.code}
-                          style={{fontSize:10,padding:"4px 8px",borderRadius:16,background:"#EEF4FF",border:"1px solid #C7D2FE",color:"#334155",cursor:"pointer",fontWeight:700}}
-                          title={sc.title}
-                          onClick={function(){
-                            setSecShortcutInput(function(p){ var n = Object.assign({}, p); n[sk] = sc.code; return n; });
-                            applySectionShortcut(sec, sc.code);
-                          }}
-                        >{sc.code}</span>
-                      );
-                    })}
-                  </div>
-                </div>
                 {sec.fields.map(function(field) {
                   var k = sec.label+"__"+field;
+                  var fieldShortcuts = getFieldShortcuts(sec.label, field);
+                  var currentShortcut = fieldShortcutInput[k] || "";
                   return (
                     <FindingField
                       key={field}
@@ -4334,6 +4424,14 @@ function RadReport() {
                       onChange={function(v){ setF(sec.label, field, v); }}
                       onTag={function(t){ togT(sec.label, field, t); }}
                       onAI={function(){ expandField(sec.label, field); }}
+                      shortcutValue={currentShortcut}
+                      shortcutChoices={fieldShortcuts}
+                      onShortcutChange={function(v){
+                        setFieldShortcutInput(function(p){ var n = Object.assign({}, p); n[k] = v; return n; });
+                      }}
+                      onShortcutApply={function(code){
+                        applyFieldShortcut(sec.label, field, code);
+                      }}
                     />
                   );
                 })}
