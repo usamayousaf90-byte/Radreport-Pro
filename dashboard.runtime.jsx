@@ -59,56 +59,49 @@ function App() {
       badge: "Previous Codebase + Templates"
     },
     {
-      title: "1. Reception",
-      desc: "Patient registration, auto patient ID, queue creation, search and history.",
+      title: "1. Reception + Billing",
+      desc: "Patient registration, auto patient ID, queue creation, search/history and cash receipt generation.",
       href: "/reception.html",
-      color: "linear-gradient(90deg,#1D4ED8,#3B82F6)",
+      color: "linear-gradient(90deg,#1D4ED8,#7C3AED)",
       button: "#1D4ED8"
     },
     {
-      title: "2. Billing",
-      desc: "Cash receipt generation, auto pricing, discount, payment methods, print.",
-      href: "/billing.html",
-      color: "linear-gradient(90deg,#7C3AED,#A855F7)",
-      button: "#7C3AED"
-    },
-    {
-      title: "3. Technician",
+      title: "2. Technician",
       desc: "Attach file metadata, lab values, notes and mark ready for reporting.",
       href: "/technician.html",
       color: "linear-gradient(90deg,#0EA5E9,#22D3EE)",
       button: "#0284C7"
     },
     {
-      title: "4. Radiologist",
+      title: "3. Radiologist",
       desc: "Worklist filters, template reporting, save/sign/finalize and AI draft.",
       href: "/radiologist.html",
       color: "linear-gradient(90deg,#16A34A,#22C55E)",
       button: "#15803D"
     },
     {
-      title: "5. Report & Verification",
+      title: "4. Report & Verification",
       desc: "Final report page with QR verification, digital signature and PDF print.",
       href: "/report.html",
       color: "linear-gradient(90deg,#EA580C,#F97316)",
       button: "#C2410C"
     },
     {
-      title: "6. Patient Portal",
+      title: "5. Patient Portal",
       desc: "Login by phone/report ID + PIN, view/download/share reports.",
       href: "/portal",
       color: "linear-gradient(90deg,#BE123C,#E11D48)",
       button: "#BE123C"
     },
     {
-      title: "7. Records",
+      title: "6. Records",
       desc: "Full patient database search with complete timeline and export.",
       href: "/records",
       color: "linear-gradient(90deg,#374151,#4B5563)",
       button: "#374151"
     },
     {
-      title: "8. Admin Dashboard",
+      title: "7. Admin Dashboard",
       desc: "KPI overview, revenue trend, modality usage and referral analytics.",
       href: "/admin",
       color: "linear-gradient(90deg,#0F172A,#334155)",
@@ -124,7 +117,7 @@ function App() {
             <div style={{ fontSize: 12, color: "#334155", fontWeight: 700, letterSpacing: 0.5 }}>RADREPORTPRO</div>
             <h1 style={{ margin: "4px 0 6px", fontSize: 34, lineHeight: 1.1 }}>Unified RIS + LIS + Templates Suite</h1>
             <div style={{ color: "#475569", maxWidth: 830 }}>
-              Combined build: your previous template-heavy RadReport engine + all 8 completed modules in one integrated suite.
+              Combined build: your previous template-heavy RadReport engine + all core modules in one integrated suite.
             </div>
           </div>
 

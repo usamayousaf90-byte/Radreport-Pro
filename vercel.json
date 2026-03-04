@@ -10,6 +10,10 @@
       "destination": "/templates.html"
     },
     {
+      "source": "/billing",
+      "destination": "/reception.html"
+    },
+    {
       "source": "/admin",
       "destination": "/admin.html"
     },

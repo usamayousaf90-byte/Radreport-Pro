@@ -342,8 +342,7 @@ function App() {
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <a href="/" style={{ color: "#1D4ED8", fontWeight: 700 }}>Suite</a>
             <a href="/templates" style={{ color: "#1D4ED8", fontWeight: 700 }}>Templates</a>
-            <a href="/reception.html" style={{ color: "#1D4ED8", fontWeight: 700 }}>Reception</a>
-            <a href="/billing.html" style={{ color: "#1D4ED8", fontWeight: 700 }}>Billing</a>
+            <a href="/reception.html" style={{ color: "#1D4ED8", fontWeight: 700 }}>Reception + Billing</a>
             <a href="/radiologist.html" style={{ color: "#1D4ED8", fontWeight: 700 }}>Radiologist</a>
             <a href="/portal" style={{ color: "#1D4ED8", fontWeight: 700 }}>Patient Portal</a>
             <a href="/admin" style={{ color: "#1D4ED8", fontWeight: 700 }}>Admin</a>

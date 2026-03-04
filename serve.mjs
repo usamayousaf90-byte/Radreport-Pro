@@ -16,6 +16,7 @@ createServer(async (req, res) => {
     let path = raw === '/' ? '/index.html' : raw;
     if (path === '/app') path = '/index.html';
     if (path === '/templates') path = '/templates.html';
+    if (path === '/billing') path = '/reception.html';
     if (path === '/admin') path = '/admin.html';
     if (path === '/records') path = '/records.html';
     if (path === '/portal') path = '/patient-portal.html';
