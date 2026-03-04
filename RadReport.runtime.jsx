@@ -2580,6 +2580,263 @@ const T = {
 };
 
 /* ══════════════════════════════════
+   MASS TEMPLATE EXPANSION
+   Adds 100 MRI + 50 X-Ray templates
+══════════════════════════════════ */
+(function expandTemplateCatalog() {
+  function pushTemplate(cfg, name, sections) {
+    if (!cfg || !cfg.sections || !Array.isArray(cfg.regions)) return false;
+    if (cfg.sections[name]) return false;
+    cfg.sections[name] = sections;
+    cfg.regions.push(name);
+    return true;
+  }
+
+  function makeMriSections(family, focus) {
+    if (family === "Brain") {
+      return [
+        {label:"Technique",fields:["Protocol","Core sequences (T1/T2/FLAIR/DWI/SWI)","Contrast used","Motion artefact"]},
+        {label:"Clinical Context",fields:["Primary indication","Neurologic symptoms","Relevant prior exam"]},
+        {label:"Parenchymal Findings",fields:[focus + " - location",focus + " - signal pattern",focus + " - edema/mass effect","Grey-white differentiation"]},
+        {label:"Diffusion and Susceptibility",fields:["Diffusion restriction","ADC correlate","Blooming/hemorrhage on SWI/GRE"]},
+        {label:"Post-Contrast Assessment",fields:["Enhancement pattern","Meningeal/dural enhancement","Necrotic/cystic component"]},
+        {label:"CSF and Ventricles",fields:["Ventricular size","Hydrocephalus","Extra-axial collection"]},
+        {label:"Vascular and Perfusion",fields:["MRA/MRV correlation","Perfusion pattern (if available)","Large vessel or venous sinus concern"]},
+        {label:"Impression",fields:["Primary diagnosis","Key differential","Urgency/communication","Follow-up recommendation"]}
+      ];
+    }
+    if (family === "HeadNeck") {
+      return [
+        {label:"Technique",fields:["Targeted protocol","Key planes and sequences","Contrast used","Artefact limitation"]},
+        {label:"Primary Site",fields:[focus + " - primary compartment",focus + " - morphology",focus + " - signal pattern",focus + " - enhancement"]},
+        {label:"Adjacent Space Involvement",fields:["Deep space spread","Skull base or orbital extension","Airway compromise"]},
+        {label:"Nodes and Glands",fields:["Nodal stations involved","Necrosis/extranodal spread","Salivary/thyroid involvement"]},
+        {label:"Vascular/Perineural",fields:["Vascular encasement","Perineural spread suspicion","Venous sinus/jugular involvement"]},
+        {label:"Impression",fields:["Stage-relevant summary","Most likely diagnosis","Differential","Recommendation"]}
+      ];
+    }
+    if (family === "Spine") {
+      return [
+        {label:"Technique",fields:["Segment coverage","Sagittal/axial sequences","Contrast used","Artefact"]},
+        {label:"Alignment and Curvature",fields:["Alignment","Listhesis","Kyphosis/lordosis"]},
+        {label:"Vertebral Bodies/Marrow",fields:[focus + " - vertebral involvement","Marrow signal abnormality","Compression/fracture pattern"]},
+        {label:"Discs and Endplates",fields:["Disc desiccation/height loss","Disc bulge/protrusion/extrusion","Endplate edema/infection signs"]},
+        {label:"Canal and Cord",fields:["Central canal stenosis","Cord signal change/myelopathy","Conus/cauda equina"]},
+        {label:"Neural Foramina",fields:["Foraminal stenosis by level","Root impingement","Lateral recess narrowing"]},
+        {label:"Paraspinal Soft Tissues",fields:["Paraspinal edema/collection","Facet/ligamentum flavum changes","Epidural component"]},
+        {label:"Impression",fields:["Dominant pathology and level","Severity grading","Critical finding communication","Management suggestion"]}
+      ];
+    }
+    if (family === "MSK") {
+      return [
+        {label:"Technique",fields:["Joint/region protocol","Key sequences","Contrast/arthrogram status","Artefact"]},
+        {label:"Bones and Marrow",fields:[focus + " - marrow signal",focus + " - fracture/contusion",focus + " - cortical integrity"]},
+        {label:"Joint and Cartilage",fields:["Joint alignment","Cartilage defect/chondral loss","Effusion/synovitis"]},
+        {label:"Ligaments and Tendons",fields:["Major ligament integrity","Tendon tendinosis/tear","Retinacular support"]},
+        {label:"Meniscus/Labrum",fields:["Meniscal or labral morphology","Tear grade/location","Displacement if present"]},
+        {label:"Soft Tissue and Neurovascular",fields:["Muscle edema/tear","Bursitis or cyst","Neurovascular abnormality"]},
+        {label:"Post-Contrast/Complications",fields:["Enhancement pattern","Infection/tumor concern","Post-op change"]},
+        {label:"Impression",fields:["Primary diagnosis","Secondary findings","Severity and chronicity","Recommendation"]}
+      ];
+    }
+    if (family === "AbdomenPelvis") {
+      return [
+        {label:"Technique",fields:["Protocol and phases","Core sequences","Contrast use","Motion/artefact"]},
+        {label:"Primary Organ Findings",fields:[focus + " - morphology",focus + " - focal lesion burden",focus + " - diffusion pattern"]},
+        {label:"Enhancement Characterization",fields:["Arterial/portal/delayed behavior","Washout/capsule pattern","Necrosis/hemorrhage/fat"]},
+        {label:"Ductal/Vascular Assessment",fields:["Duct caliber or obstruction","Portal/venous patency","Vascular invasion"]},
+        {label:"Nodes and Serosa",fields:["Regional nodes","Peritoneal/mesenteric disease","Ascites/fluid"]},
+        {label:"Associated Organs",fields:["Adjacent organ extension","Complications","Incidental relevant findings"]},
+        {label:"Staging or Risk Category",fields:["Staging element if applicable","Structured risk category","Treatment-response note"]},
+        {label:"Impression",fields:["Primary diagnosis","Key differential","Actionable concern","Recommendation"]}
+      ];
+    }
+    if (family === "Breast") {
+      return [
+        {label:"Technique",fields:["Breast MRI protocol","Dynamic contrast timing","Background enhancement quality"]},
+        {label:"Lesion Morphology",fields:[focus + " - side and clock-face",focus + " - size in 3 planes",focus + " - margins/internal pattern"]},
+        {label:"Kinetics and Diffusion",fields:["Initial enhancement","Delayed curve type","Diffusion restriction and ADC"]},
+        {label:"Associated Findings",fields:["Nipple/skin/chest wall involvement","Multifocal/multicentric disease","Contralateral finding"]},
+        {label:"Axillary/Internal Mammary Nodes",fields:["Nodal morphology","Cortical thickening/necrosis","Suspicious level"]},
+        {label:"Impression",fields:["BI-RADS MRI category","Most likely diagnosis","Biopsy/follow-up recommendation","Comparative trend"]}
+      ];
+    }
+    if (family === "Cardiac") {
+      return [
+        {label:"Technique",fields:["ECG-gated protocol","Functional sequences","LGE mapping","Contrast use"]},
+        {label:"Chamber Function",fields:[focus + " - LV function",focus + " - RV function","Regional wall motion"]},
+        {label:"Myocardial Tissue",fields:["Edema/T2 change","Fibrosis/scar pattern","LGE distribution"]},
+        {label:"Valves and Pericardium",fields:["Valvular morphology/function","Pericardial thickening/effusion","Constriction signs"]},
+        {label:"Great Vessels",fields:["Aortic root and thoracic aorta","Pulmonary artery","Congenital variant"]},
+        {label:"Impression",fields:["Primary cardiomyopathy/inflammatory conclusion","Risk implication","Recommendation"]}
+      ];
+    }
+    return [
+      {label:"Technique",fields:["Protocol","Coverage","Contrast","Artefact"]},
+      {label:"Arterial Findings",fields:[focus + " - patency",focus + " - stenosis severity",focus + " - occlusion/dissection"]},
+      {label:"Aneurysm/Wall",fields:["Aneurysm location and size","Wall thrombus","Rupture signs"]},
+      {label:"Collateral/Perfusion",fields:["Collateral channels","Distal run-off","Perfusion asymmetry"]},
+      {label:"Venous Correlation",fields:["Major venous patency","Venous compression/thrombus","Flow-related concern"]},
+      {label:"Impression",fields:["Primary vascular diagnosis","Critical stenosis/occlusion flag","Recommendation"]}
+    ];
+  }
+
+  function makeXraySections(family, focus) {
+    if (family === "Chest") {
+      return [
+        {label:"Technique",fields:["Projection/view",focus + " - exam quality","Rotation/inspiration","Comparison available"]},
+        {label:"Lungs and Pleura",fields:[focus + " - parenchymal opacities",focus + " - pleural findings","Pneumothorax/effusion status"]},
+        {label:"Cardiomediastinal",fields:["Cardiomediastinal silhouette","Hilar contours","Aortic/mediastinal widening"]},
+        {label:"Lines/Devices",fields:["ETT/central line/drains","Device position","Device-related complication"]},
+        {label:"Impression",fields:["Primary chest diagnosis","Urgency/critical communication","Follow-up suggestion"]}
+      ];
+    }
+    if (family === "Spine") {
+      return [
+        {label:"Technique",fields:["Views obtained",focus + " - quality","Alignment adequacy"]},
+        {label:"Alignment",fields:["Curvature","Subluxation/listhesis","Acute malalignment"]},
+        {label:"Vertebral Bodies/Disc Spaces",fields:["Compression deformity","Disc space narrowing","Endplate osteophytes"]},
+        {label:"Posterior Elements",fields:["Facet/pars changes","Pedicle integrity","Spinous process alignment"]},
+        {label:"Impression",fields:["Primary spinal finding","Trauma/degenerative severity","Recommendation"]}
+      ];
+    }
+    if (family === "AbdomenPelvis") {
+      return [
+        {label:"Technique",fields:["Projection",focus + " - film quality","Coverage"]},
+        {label:"Bowel Gas Pattern",fields:["Non-obstructive/obstructive pattern","Dilated loops/air-fluid levels","Free air suspicion"]},
+        {label:"Calcifications",fields:["Renal/ureteric calculus","Vascular calcification","Other radiopaque focus"]},
+        {label:"Soft Tissue and Bones",fields:["Organ shadow outline","Soft tissue mass effect","Pelvic/bony abnormalities"]},
+        {label:"Impression",fields:["Primary abdominal/pelvic diagnosis","Urgent concern","Recommendation"]}
+      ];
+    }
+    if (family === "HeadNeck") {
+      return [
+        {label:"Technique",fields:["Views",focus + " - quality","Positioning"]},
+        {label:"Bones/Air Spaces",fields:["Skull/facial/sinus bony detail","Sinus opacification/air-fluid level","Fracture line"]},
+        {label:"Soft Tissue",fields:["Prevertebral/soft tissue swelling","Foreign body","Secondary signs"]},
+        {label:"Impression",fields:["Primary diagnosis","Trauma/infective concern","Recommendation"]}
+      ];
+    }
+    return [
+      {label:"Technique",fields:["Views obtained",focus + " - quality","Positioning"]},
+      {label:"Bones",fields:[focus + " - cortical continuity",focus + " - fracture/dislocation",focus + " - alignment"]},
+      {label:"Joints",fields:["Joint space narrowing","Articular incongruity","Degenerative change"]},
+      {label:"Soft Tissues",fields:["Swelling/effusion","Foreign body","Calcification"]},
+      {label:"Impression",fields:["Primary diagnosis","Severity/chronicity","Recommendation"]}
+    ];
+  }
+
+  var mriTemplates = [];
+  var brainEntities = ["Acute Ischemic Stroke","Seizure Focus","Demyelinating Disease","Brain Tumor","Neuroinfection","Neurodegeneration"];
+  var brainStages = ["Initial","Follow-up","Post-treatment"];
+  brainEntities.forEach(function(entity) {
+    brainStages.forEach(function(stage) {
+      mriTemplates.push({ name:"MRI Brain - " + entity + " (" + stage + ")", family:"Brain", focus:entity });
+    });
+  });
+
+  var hnEntities = ["Pituitary Lesion","Orbit Pathology","Temporal Bone and Inner Ear","Sinonasal Mass","Deep Neck Infection","Head and Neck Malignancy"];
+  ["Initial","Follow-up"].forEach(function(stage) {
+    hnEntities.forEach(function(entity) {
+      mriTemplates.push({ name:"MRI Head/Neck - " + entity + " (" + stage + ")", family:"HeadNeck", focus:entity });
+    });
+  });
+
+  var spineSegments = ["Cervical","Thoracic","Lumbar"];
+  var spineEntities = ["Degenerative Disc Disease","Trauma","Infection","Neoplasm","Myelopathy","Post-operative Evaluation"];
+  spineSegments.forEach(function(seg) {
+    spineEntities.forEach(function(entity) {
+      mriTemplates.push({ name:"MRI Spine - " + seg + " " + entity, family:"Spine", focus:seg + " spine " + entity });
+    });
+  });
+
+  var mskSites = ["Shoulder","Elbow","Wrist/Hand","Hip","Knee"];
+  var mskEntities = ["Ligament Injury","Tendon Tear","Cartilage Defect","Bone Marrow Lesion"];
+  mskSites.forEach(function(site) {
+    mskEntities.forEach(function(entity) {
+      mriTemplates.push({ name:"MRI MSK - " + site + " " + entity, family:"MSK", focus:site + " " + entity });
+    });
+  });
+
+  var abdOrgans = ["Liver/Biliary","Pancreas","Kidney/Adrenal","Bowel/Peritoneum","Pelvic Organs"];
+  var abdEntities = ["Mass Characterization","Inflammatory Disease","Trauma","Oncology Staging"];
+  abdOrgans.forEach(function(organ) {
+    abdEntities.forEach(function(entity) {
+      mriTemplates.push({ name:"MRI Abdomen/Pelvis - " + organ + " " + entity, family:"AbdomenPelvis", focus:organ + " " + entity });
+    });
+  });
+
+  ["Breast Screening High-Risk","Breast Problem Solving","Breast Implant Integrity"].forEach(function(entity) {
+    ["Initial","Post-treatment"].forEach(function(stage) {
+      mriTemplates.push({ name:"MRI Breast - " + entity + " (" + stage + ")", family:"Breast", focus:entity });
+    });
+  });
+
+  ["Cardiomyopathy Workup","Myocarditis and Viability","Congenital Heart Disease","Pericardial Disease"].forEach(function(entity) {
+    mriTemplates.push({ name:"MRI Cardiac - " + entity, family:"Cardiac", focus:entity });
+  });
+
+  ["MRA Head/Neck Stenosis","MRA Aorta and Peripheral Runoff"].forEach(function(entity) {
+    mriTemplates.push({ name:"MRI Vascular - " + entity, family:"Vascular", focus:entity });
+  });
+
+  var xrayTemplates = [];
+  var chestEntities = ["Pneumonia","Pleural Effusion","Pneumothorax","Heart Failure","Tuberculosis","Lung Nodule Follow-up"];
+  var chestViews = ["Portable AP","PA/Lateral","Follow-up"];
+  chestEntities.forEach(function(entity) {
+    chestViews.forEach(function(view) {
+      xrayTemplates.push({ name:"X-Ray Chest - " + entity + " (" + view + ")", family:"Chest", focus:entity });
+    });
+  });
+
+  var upperSites = ["Shoulder","Humerus/Elbow","Forearm","Wrist","Hand"];
+  var lowerSites = ["Hip/Pelvis","Femur/Knee","Leg","Ankle","Foot"];
+  ["Trauma","Degenerative/Inflammatory"].forEach(function(entity) {
+    upperSites.forEach(function(site) {
+      xrayTemplates.push({ name:"X-Ray " + site + " - " + entity, family:"Extremity", focus:site + " " + entity });
+    });
+    lowerSites.forEach(function(site) {
+      xrayTemplates.push({ name:"X-Ray " + site + " - " + entity, family:"Extremity", focus:site + " " + entity });
+    });
+  });
+
+  ["Cervical","Thoracic","Lumbar"].forEach(function(seg) {
+    ["Trauma","Degenerative"].forEach(function(entity) {
+      xrayTemplates.push({ name:"X-Ray Spine - " + seg + " " + entity, family:"Spine", focus:seg + " spine " + entity });
+    });
+  });
+
+  [
+    "X-Ray Abdomen - Acute Obstruction Pattern",
+    "X-Ray Abdomen - Renal/Urinary Calculi Survey",
+    "X-Ray Abdomen - Post-operative Ileus Follow-up",
+    "X-Ray Pelvis - Trauma Alignment"
+  ].forEach(function(name) {
+    xrayTemplates.push({ name:name, family:"AbdomenPelvis", focus:name.replace("X-Ray ","") });
+  });
+
+  [
+    "X-Ray Skull - Trauma and Fracture Survey",
+    "X-Ray Paranasal Sinuses - Sinusitis/Fluid Level"
+  ].forEach(function(name) {
+    xrayTemplates.push({ name:name, family:"HeadNeck", focus:name.replace("X-Ray ","") });
+  });
+
+  var addedMRI = 0;
+  var addedXR = 0;
+  mriTemplates.forEach(function(item) {
+    if (pushTemplate(T.MRI, item.name, makeMriSections(item.family, item.focus))) addedMRI++;
+  });
+  xrayTemplates.forEach(function(item) {
+    if (pushTemplate(T["X-Ray"], item.name, makeXraySections(item.family, item.focus))) addedXR++;
+  });
+
+  if (typeof window !== "undefined") {
+    window.__rrpExpandedTemplateCounts = { mriAdded: addedMRI, xrayAdded: addedXR };
+  }
+})();
+
+/* ══════════════════════════════════
    AI CALL — uses Vercel serverless /api/ai
    with offline fallback if API unavailable
 ══════════════════════════════════ */
