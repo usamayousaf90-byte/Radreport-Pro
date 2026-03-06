@@ -3242,9 +3242,13 @@ function AIBtn({ onClick, loading, disabled }) {
 function FindingField({
   sl, field, val, tag, aiLoading, isRec, isDictating, activeKey, dictKey,
   voiceStart, voiceStop, cancelDictation, onChange, onTag, onAI,
-  shortcutValue, shortcutChoices, onShortcutChange, onShortcutApply
+  shortcutValue, shortcutChoices, onShortcutChange, onShortcutApply,
+  resolveShortcut, onShortcutTag, onInlineShortcutApplied
 }) {
   var inputRef = useRef(null);
+  var pendingSelectionRef = useRef(null);
+  var blurTimerRef = useRef(null);
+  var [inlineShortcutMenu, setInlineShortcutMenu] = useState(null);
   var fKey = sl + "__" + field;
   var border = "#DDE5EF", bg = "#FAFCFF";
   if (isRec)         { border = "#DC2626"; bg = "#FFF5F5"; }
@@ -3257,7 +3261,67 @@ function FindingField({
     if (!inputRef.current) return;
     inputRef.current.style.height = "auto";
     inputRef.current.style.height = Math.max(88, inputRef.current.scrollHeight) + "px";
+    if (pendingSelectionRef.current != null) {
+      inputRef.current.focus();
+      inputRef.current.setSelectionRange(pendingSelectionRef.current, pendingSelectionRef.current);
+      pendingSelectionRef.current = null;
+    }
   }, [val]);
+
+  useEffect(function() {
+    return function() {
+      if (blurTimerRef.current) window.clearTimeout(blurTimerRef.current);
+    };
+  }, []);
+
+  var syncInlineShortcutMenu = useCallback(function(text, caretPos) {
+    var match = detectInlineShortcutQuery(text, caretPos);
+    if (!match) {
+      setInlineShortcutMenu(null);
+      return;
+    }
+    var nextChoices = getInlineShortcutChoices(shortcutChoices || [], match.query);
+    if (!nextChoices.length) {
+      setInlineShortcutMenu(null);
+      return;
+    }
+    setInlineShortcutMenu(function(prev) {
+      var activeIndex = 0;
+      if (prev && prev.items && prev.items.length && prev.query === match.query) {
+        activeIndex = Math.min(prev.activeIndex || 0, nextChoices.length - 1);
+      }
+      return {
+        query: match.query,
+        start: match.start,
+        end: match.end,
+        activeIndex: activeIndex,
+        items: nextChoices
+      };
+    });
+  }, [shortcutChoices]);
+
+  var commitInlineShortcut = useCallback(function(choice) {
+    if (!choice || !resolveShortcut) return;
+    var menu = inlineShortcutMenu;
+    var input = inputRef.current;
+    if ((!menu || typeof menu.start !== "number") && input) {
+      menu = detectInlineShortcutQuery(val, input.selectionStart);
+    }
+    if (!menu || typeof menu.start !== "number" || typeof menu.end !== "number") return;
+    var resolved = resolveShortcut(choice.code);
+    if (!resolved || !resolved.ok || !resolved.text) return;
+    var currentValue = String(val == null ? "" : val);
+    var before = currentValue.slice(0, menu.start);
+    var after = currentValue.slice(menu.end);
+    var nextValue = before + resolved.text + after;
+    pendingSelectionRef.current = before.length + resolved.text.length;
+    onChange(nextValue);
+    if (onShortcutTag && (resolved.tag === "n" || resolved.tag === "ab" || resolved.tag === "i")) {
+      onShortcutTag(resolved.tag);
+    }
+    if (onInlineShortcutApplied) onInlineShortcutApplied(resolved);
+    setInlineShortcutMenu(null);
+  }, [inlineShortcutMenu, onChange, onInlineShortcutApplied, onShortcutTag, resolveShortcut, val]);
 
   return (
     <div style={{marginBottom:16}}>
@@ -3269,19 +3333,99 @@ function FindingField({
         </div>
       </div>
       <div style={{display:"flex",gap:6,alignItems:"center"}}>
-        <textarea
-          ref={inputRef}
-          className="ri"
-          rows={3}
-          style={{flex:1,padding:"10px 12px",border:"1.5px solid "+border,borderRadius:7,fontSize:14,color:"#1A2B3C",background:bg,outline:"none",fontFamily:"'DM Sans',sans-serif",transition:"border-color .15s,background .15s",boxShadow:isDictating?"0 0 0 3px rgba(251,146,60,.25)":isRec?"0 0 0 3px rgba(220,38,38,.15)":"none",lineHeight:1.55,resize:"vertical",minHeight:88,overflow:"hidden"}}
-          placeholder={isRec ? "🔴 Listening… speak now" : isDictating ? "✏️ Field focused — activate dictation now" : "Type, or click 🎤…"}
-          value={val}
-          onChange={function(e){
-            e.target.style.height = "auto";
-            e.target.style.height = Math.max(88, e.target.scrollHeight) + "px";
-            onChange(e.target.value);
-          }}
-        />
+        <div style={{flex:1,position:"relative"}}>
+          <textarea
+            ref={inputRef}
+            className="ri"
+            rows={3}
+            style={{width:"100%",padding:"10px 12px",border:"1.5px solid "+border,borderRadius:7,fontSize:14,color:"#1A2B3C",background:bg,outline:"none",fontFamily:"'DM Sans',sans-serif",transition:"border-color .15s,background .15s",boxShadow:isDictating?"0 0 0 3px rgba(251,146,60,.25)":isRec?"0 0 0 3px rgba(220,38,38,.15)":"none",lineHeight:1.55,resize:"vertical",minHeight:88,overflow:"hidden"}}
+            placeholder={isRec ? "Listening... speak now" : isDictating ? "Field focused - activate dictation now" : "Type, or click mic... Use #gfll for inline shortcuts."}
+            value={val}
+            onChange={function(e){
+              e.target.style.height = "auto";
+              e.target.style.height = Math.max(88, e.target.scrollHeight) + "px";
+              onChange(e.target.value);
+              syncInlineShortcutMenu(e.target.value, e.target.selectionStart);
+            }}
+            onKeyDown={function(e) {
+              if (!inlineShortcutMenu || !inlineShortcutMenu.items || !inlineShortcutMenu.items.length) return;
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setInlineShortcutMenu(function(prev) {
+                  if (!prev || !prev.items || !prev.items.length) return prev;
+                  return Object.assign({}, prev, { activeIndex: Math.min((prev.activeIndex || 0) + 1, prev.items.length - 1) });
+                });
+                return;
+              }
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setInlineShortcutMenu(function(prev) {
+                  if (!prev || !prev.items || !prev.items.length) return prev;
+                  return Object.assign({}, prev, { activeIndex: Math.max((prev.activeIndex || 0) - 1, 0) });
+                });
+                return;
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setInlineShortcutMenu(null);
+                return;
+              }
+              if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+                e.preventDefault();
+                commitInlineShortcut(inlineShortcutMenu.items[inlineShortcutMenu.activeIndex || 0]);
+              }
+            }}
+            onKeyUp={function(e) {
+              if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === "Tab" || e.key === "Escape") return;
+              syncInlineShortcutMenu(e.currentTarget.value, e.currentTarget.selectionStart);
+            }}
+            onClick={function(e) {
+              syncInlineShortcutMenu(e.currentTarget.value, e.currentTarget.selectionStart);
+            }}
+            onSelect={function(e) {
+              syncInlineShortcutMenu(e.currentTarget.value, e.currentTarget.selectionStart);
+            }}
+            onBlur={function() {
+              if (blurTimerRef.current) window.clearTimeout(blurTimerRef.current);
+              blurTimerRef.current = window.setTimeout(function() {
+                setInlineShortcutMenu(null);
+              }, 120);
+            }}
+          />
+          {inlineShortcutMenu && inlineShortcutMenu.items && inlineShortcutMenu.items.length > 0 && (
+            <div style={{position:"absolute",left:0,right:0,top:"calc(100% + 6px)",background:"#FFFFFF",border:"1px solid #D7E1EE",borderRadius:12,boxShadow:"0 18px 40px rgba(15,23,42,.12)",zIndex:20,padding:6}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#5A7090",textTransform:"uppercase",letterSpacing:.8,padding:"4px 8px 6px 8px"}}>
+                Inline shortcuts for #{inlineShortcutMenu.query}
+              </div>
+              {inlineShortcutMenu.items.map(function(choice, idx) {
+                var active = idx === (inlineShortcutMenu.activeIndex || 0);
+                var preview = String(choice.title || choice.fallback || "").trim();
+                return (
+                  <button
+                    key={choice.code + "__" + idx}
+                    type="button"
+                    onMouseDown={function(e) {
+                      e.preventDefault();
+                      if (blurTimerRef.current) window.clearTimeout(blurTimerRef.current);
+                      commitInlineShortcut(choice);
+                    }}
+                    style={{display:"block",width:"100%",textAlign:"left",border:"none",background:active?"#EEF4FF":"transparent",borderRadius:10,padding:"8px 10px",cursor:"pointer"}}
+                  >
+                    <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"baseline"}}>
+                      <span style={{fontSize:12,fontWeight:800,color:"#0F172A"}}>#{choice.code}</span>
+                      <span style={{fontSize:10,fontWeight:700,color:"#4F46E5"}}>{active ? "Enter" : ""}</span>
+                    </div>
+                    {!!preview && (
+                      <div style={{fontSize:11,color:"#5A7090",lineHeight:1.4,marginTop:2}}>
+                        {preview.length > 120 ? preview.slice(0, 117) + "..." : preview}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
         <MicBtn
           fKey={fKey}
           activeKey={activeKey}
@@ -3299,7 +3443,7 @@ function FindingField({
           list="rrp-shortcuts-list"
           className="ri"
           style={{flex:"1 1 240px",maxWidth:360,padding:"6px 10px",border:"1px solid #CBD5E1",borderRadius:7,fontSize:12,color:"#1A2B3C",background:"#F8FAFC",outline:"none"}}
-          placeholder="Shortcut code (e.g. FL-1, CLD)"
+          placeholder="Shortcut code or type #gfll above"
           value={shortcutValue || ""}
           onChange={function(e){ onShortcutChange(e.target.value); }}
         />
@@ -3853,6 +3997,47 @@ const SHORTCUTS = (function() {
 
 function normalizeShortcutCode(v) {
   return String(v || "").toUpperCase().replace(/\s+/g, "").trim();
+}
+
+function isInlineShortcutChar(ch) {
+  return /^[A-Za-z0-9_-]$/.test(ch || "");
+}
+
+function detectInlineShortcutQuery(text, caretPosition) {
+  var value = String(text == null ? "" : text);
+  var caret = typeof caretPosition === "number" ? Math.max(0, Math.min(value.length, caretPosition)) : value.length;
+  var left = caret;
+  while (left > 0 && isInlineShortcutChar(value.charAt(left - 1))) left--;
+  if (left <= 0 || value.charAt(left - 1) !== "#") return null;
+  var hashIndex = left - 1;
+  var beforeHash = hashIndex > 0 ? value.charAt(hashIndex - 1) : "";
+  if (beforeHash && isInlineShortcutChar(beforeHash)) return null;
+  var right = caret;
+  while (right < value.length && isInlineShortcutChar(value.charAt(right))) right++;
+  var query = value.slice(hashIndex + 1, right);
+  if (!query) return null;
+  return { query: query, start: hashIndex, end: right };
+}
+
+function getInlineShortcutChoices(choices, rawQuery) {
+  var query = normalizeShortcutCode(rawQuery);
+  if (!query) return [];
+  return (choices || []).map(function(sc) {
+    var codes = [normalizeShortcutCode(sc.code)].concat((sc.aliases || []).map(function(alias) {
+      return normalizeShortcutCode(alias);
+    }));
+    var exact = codes.some(function(code) { return code === query; });
+    var prefix = codes.some(function(code) { return code.indexOf(query) === 0; });
+    var contains = !prefix && codes.some(function(code) { return code.indexOf(query) !== -1; });
+    var titleHit = String(sc.title || "").toLowerCase().indexOf(String(rawQuery || "").toLowerCase()) !== -1;
+    var fallbackHit = String(sc.fallback || "").toLowerCase().indexOf(String(rawQuery || "").toLowerCase()) !== -1;
+    var score = exact ? 120 : prefix ? 80 : contains ? 45 : titleHit ? 18 : fallbackHit ? 12 : 0;
+    if (!score) return null;
+    return Object.assign({}, sc, { inlineScore: score });
+  }).filter(Boolean).sort(function(a, b) {
+    if (a.inlineScore !== b.inlineScore) return b.inlineScore - a.inlineScore;
+    return String(a.code || "").localeCompare(String(b.code || ""));
+  }).slice(0, 8);
 }
 
 function tokenizeContext(v) {
@@ -4735,43 +4920,56 @@ function RadReport() {
     });
   }, [allShortcuts, modality, region]);
 
-  var applyFieldShortcut = useCallback(function(secLabel, fieldLabel, rawCode) {
+  var setFieldTag = function(sl, f, t) {
+    setTags(function(prev) {
+      var next = Object.assign({}, prev);
+      next[sl + "__" + f] = t;
+      return next;
+    });
+  };
+
+  var resolveFieldShortcut = useCallback(function(secLabel, fieldLabel, rawCode) {
     var code = normalizeShortcutCode(rawCode);
-    if (!code) { showToast("Enter a shortcut code first", "error"); return; }
+    if (!code) return { ok: false, error: "Enter a shortcut code first", errorType: "error" };
     var sc = allShortcuts.find(function(s) {
       if (normalizeShortcutCode(s.code) === code) return true;
       return (s.aliases || []).some(function(a) { return normalizeShortcutCode(a) === code; });
     });
-    if (!sc) {
-      showToast("Shortcut not found: " + code, "error");
-      return;
-    }
+    if (!sc) return { ok: false, error: "Shortcut not found: " + code, errorType: "error" };
     if (!shortcutAppliesToContext(sc, modality, region, secLabel, fieldLabel)) {
-      showToast("Shortcut " + sc.code + " is not applicable here", "error");
-      return;
+      return { ok: false, error: "Shortcut " + sc.code + " is not applicable here", errorType: "error" };
     }
     var rule = (sc.rules || []).find(function(r) { return fieldMatchesRule(fieldLabel, r); });
     var text = (rule && rule.value) ? rule.value : (sc.fallback || "");
-    if (!text) {
-      showToast("Shortcut has no mapped text for this field", "info");
+    if (!text) return { ok: false, error: "Shortcut has no mapped text for this field", errorType: "info" };
+    var resolvedTag = rule && rule.tag ? rule.tag : sc.defaultTag;
+    return {
+      ok: true,
+      code: sc.code,
+      shortcut: sc,
+      rule: rule || null,
+      text: text,
+      tag: resolvedTag
+    };
+  }, [allShortcuts, modality, region]);
+
+  var applyFieldShortcut = useCallback(function(secLabel, fieldLabel, rawCode) {
+    var resolved = resolveFieldShortcut(secLabel, fieldLabel, rawCode);
+    if (!resolved || !resolved.ok) {
+      showToast(resolved && resolved.error ? resolved.error : "Shortcut could not be applied", resolved && resolved.errorType ? resolved.errorType : "error");
       return;
     }
     var key = secLabel + "__" + fieldLabel;
     setFindings(function(prev) {
       var next = Object.assign({}, prev);
-      next[key] = text;
+      next[key] = resolved.text;
       return next;
     });
-    var resolvedTag = rule && rule.tag ? rule.tag : sc.defaultTag;
-    if (resolvedTag === "n" || resolvedTag === "ab" || resolvedTag === "i") {
-      setTags(function(prev) {
-        var next = Object.assign({}, prev);
-        next[key] = resolvedTag;
-        return next;
-      });
+    if (resolved.tag === "n" || resolved.tag === "ab" || resolved.tag === "i") {
+      setFieldTag(secLabel, fieldLabel, resolved.tag);
     }
-    showToast("⚡ " + sc.code + " applied to " + fieldLabel, "success");
-  }, [allShortcuts, modality, region, showToast]);
+    showToast("Shortcut " + resolved.code + " applied to " + fieldLabel, "success");
+  }, [resolveFieldShortcut, showToast]);
 
   var expandField = useCallback(async function(sl, field) {
     var meta = getFieldMeta(sl, field);
@@ -5627,6 +5825,15 @@ function RadReport() {
                       }}
                       onShortcutApply={function(code){
                         applyFieldShortcut(sec.label, field, code);
+                      }}
+                      resolveShortcut={function(code){
+                        return resolveFieldShortcut(sec.label, field, code);
+                      }}
+                      onShortcutTag={function(nextTag){
+                        setFieldTag(sec.label, field, nextTag);
+                      }}
+                      onInlineShortcutApplied={function(resolved){
+                        showToast("Shortcut " + resolved.code + " inserted into " + field, "success");
                       }}
                     />
                   );
