@@ -95,6 +95,35 @@ const CSS = `
   }
 `;
 
+const TEXT_STYLE_FONTS = [
+  { key: "dm", label: "DM Sans", family: "'DM Sans',sans-serif" },
+  { key: "arial", label: "Arial", family: "Arial,sans-serif" },
+  { key: "georgia", label: "Georgia", family: "Georgia,serif" },
+  { key: "mono", label: "Courier", family: "'Courier New',monospace" }
+];
+
+const TEXT_STYLE_SIZES = [12, 14, 16, 18, 20];
+const DEFAULT_TEXT_STYLE = { fontKey: "dm", fontSize: 14, bold: false };
+
+function normalizeTextStyle(style) {
+  var next = Object.assign({}, DEFAULT_TEXT_STYLE, style || {});
+  if (!TEXT_STYLE_FONTS.some(function(font) { return font.key === next.fontKey; })) next.fontKey = DEFAULT_TEXT_STYLE.fontKey;
+  next.fontSize = Number(next.fontSize);
+  if (TEXT_STYLE_SIZES.indexOf(next.fontSize) === -1) next.fontSize = DEFAULT_TEXT_STYLE.fontSize;
+  next.bold = !!next.bold;
+  return next;
+}
+
+function resolveTextStyle(style, extra) {
+  var normalized = normalizeTextStyle(style);
+  var font = TEXT_STYLE_FONTS.find(function(item) { return item.key === normalized.fontKey; }) || TEXT_STYLE_FONTS[0];
+  return Object.assign({
+    fontFamily: font.family,
+    fontSize: normalized.fontSize,
+    fontWeight: normalized.bold ? 700 : 400
+  }, extra || {});
+}
+
 /* ══════════════════════════════════════════════════════
    FIELD SUGGESTIONS LOOKUP
    Key = lowercase field name
@@ -3237,13 +3266,49 @@ function AIBtn({ onClick, loading, disabled }) {
   );
 }
 
+function TextStyleToolbar({ value, onChange }) {
+  var style = normalizeTextStyle(value);
+  return (
+    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:8}}>
+      <select
+        className="ri"
+        value={style.fontKey}
+        onChange={function(e){ onChange({ fontKey: e.target.value }); }}
+        style={{padding:"5px 9px",border:"1px solid #CBD5E1",borderRadius:7,fontSize:11,color:"#334155",background:"#FFFFFF",fontFamily:"'DM Sans',sans-serif",cursor:"pointer"}}
+      >
+        {TEXT_STYLE_FONTS.map(function(font) {
+          return <option key={font.key} value={font.key}>{font.label}</option>;
+        })}
+      </select>
+      <select
+        className="ri"
+        value={style.fontSize}
+        onChange={function(e){ onChange({ fontSize: Number(e.target.value) }); }}
+        style={{padding:"5px 9px",border:"1px solid #CBD5E1",borderRadius:7,fontSize:11,color:"#334155",background:"#FFFFFF",fontFamily:"'DM Sans',sans-serif",cursor:"pointer"}}
+      >
+        {TEXT_STYLE_SIZES.map(function(size) {
+          return <option key={size} value={size}>{size}px</option>;
+        })}
+      </select>
+      <button
+        type="button"
+        onClick={function(){ onChange({ bold: !style.bold }); }}
+        style={{padding:"5px 10px",borderRadius:7,border:"1px solid "+(style.bold ? "#1D4ED8" : "#CBD5E1"),background:style.bold ? "#DBEAFE" : "#FFFFFF",color:style.bold ? "#1D4ED8" : "#334155",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}
+      >
+        B
+      </button>
+    </div>
+  );
+}
+
 /* FindingField — outside main for stable identity.
    Holds a ref to its <input> so we can focus it for OS dictation. */
 function FindingField({
   sl, field, val, tag, aiLoading, isRec, isDictating, activeKey, dictKey,
   voiceStart, voiceStop, cancelDictation, onChange, onTag, onAI,
   shortcutValue, shortcutChoices, onShortcutChange, onShortcutApply,
-  resolveShortcut, onShortcutTag, onInlineShortcutApplied
+  resolveShortcut, onShortcutTag, onInlineShortcutApplied,
+  textStyle, onTextStyleChange
 }) {
   var inputRef = useRef(null);
   var pendingSelectionRef = useRef(null);
@@ -3332,13 +3397,14 @@ function FindingField({
           <button onClick={function(){onTag("ab");}} style={{padding:"3px 9px",borderRadius:20,fontSize:11,fontWeight:700,cursor:"pointer",border:"none",background:tag==="ab"?"#C0392B":"#DDE5EF",color:tag==="ab"?"#fff":"#5A7090"}}>ABNORMAL</button>
         </div>
       </div>
+      <TextStyleToolbar value={textStyle} onChange={onTextStyleChange} />
       <div style={{display:"flex",gap:6,alignItems:"center"}}>
         <div style={{flex:1,position:"relative"}}>
           <textarea
             ref={inputRef}
             className="ri"
             rows={3}
-            style={{width:"100%",padding:"10px 12px",border:"1.5px solid "+border,borderRadius:7,fontSize:14,color:"#1A2B3C",background:bg,outline:"none",fontFamily:"'DM Sans',sans-serif",transition:"border-color .15s,background .15s",boxShadow:isDictating?"0 0 0 3px rgba(251,146,60,.25)":isRec?"0 0 0 3px rgba(220,38,38,.15)":"none",lineHeight:1.55,resize:"vertical",minHeight:88,overflow:"hidden"}}
+            style={resolveTextStyle(textStyle, {width:"100%",padding:"10px 12px",border:"1.5px solid "+border,borderRadius:7,color:"#1A2B3C",background:bg,outline:"none",transition:"border-color .15s,background .15s",boxShadow:isDictating?"0 0 0 3px rgba(251,146,60,.25)":isRec?"0 0 0 3px rgba(220,38,38,.15)":"none",lineHeight:1.55,resize:"vertical",minHeight:88,overflow:"hidden"})}
             placeholder={isRec ? "Listening... speak now" : isDictating ? "Field focused - activate dictation now" : "Type, or click mic... Use #gfll for inline shortcuts."}
             value={val}
             onChange={function(e){
@@ -4495,7 +4561,7 @@ function structuredFieldToText(meta, rawValue) {
   }).filter(Boolean).join("\n");
 }
 
-function StructuredFieldInput({ value, onChange, placeholder, width, multiline }) {
+function StructuredFieldInput({ value, onChange, placeholder, width, multiline, textStyle }) {
   if (multiline) {
     return (
       <textarea
@@ -4504,7 +4570,7 @@ function StructuredFieldInput({ value, onChange, placeholder, width, multiline }
         placeholder={placeholder || ""}
         rows={2}
         onChange={function(e){ onChange(e.target.value); }}
-        style={{width:width || 260,minHeight:46,padding:"9px 10px",border:"1.5px solid #CBD5E1",borderRadius:8,fontSize:13,color:"#1A2B3C",background:"#fff",outline:"none",fontFamily:"'DM Sans',sans-serif",lineHeight:1.45,resize:"vertical"}}
+        style={resolveTextStyle(textStyle, {width:width || 260,minHeight:46,padding:"9px 10px",border:"1.5px solid #CBD5E1",borderRadius:8,color:"#1A2B3C",background:"#fff",outline:"none",lineHeight:1.45,resize:"vertical"})}
       />
     );
   }
@@ -4514,12 +4580,12 @@ function StructuredFieldInput({ value, onChange, placeholder, width, multiline }
       value={value}
       placeholder={placeholder || ""}
       onChange={function(e){ onChange(e.target.value); }}
-      style={{width:width || 156,padding:"9px 10px",border:"1.5px solid #CBD5E1",borderRadius:8,fontSize:13,color:"#1A2B3C",background:"#fff",outline:"none",fontFamily:"'DM Sans',sans-serif"}}
+      style={resolveTextStyle(textStyle, {width:width || 156,padding:"9px 10px",border:"1.5px solid #CBD5E1",borderRadius:8,color:"#1A2B3C",background:"#fff",outline:"none"})}
     />
   );
 }
 
-function ImportedStructuredField({ fieldLabel, meta, value, onChange, studyDate }) {
+function ImportedStructuredField({ fieldLabel, meta, value, onChange, studyDate, textStyle, onTextStyleChange }) {
   var parsed = parseStructuredField(meta, value || (meta && meta.defaultRaw) || "");
   var referenceMap = buildStructuredReferenceMap(meta, value || (meta && meta.defaultRaw) || "", studyDate);
   var getReference = function(rowIndex, tokenIndex) {
@@ -4528,6 +4594,7 @@ function ImportedStructuredField({ fieldLabel, meta, value, onChange, studyDate 
   return (
     <div style={{marginBottom:18}}>
       <div style={{fontSize:11,fontWeight:700,color:"#5A7090",textTransform:"uppercase",letterSpacing:.9,marginBottom:8}}>{fieldLabel}</div>
+      <TextStyleToolbar value={textStyle} onChange={onTextStyleChange} />
       <div style={{border:"1px solid #DDE5EF",borderRadius:12,background:"#F8FBFF",padding:16}}>
         {parsed.rows.map(function(row, rowIdx) {
           if (row.kind === "header-cards") {
@@ -4561,6 +4628,7 @@ function ImportedStructuredField({ fieldLabel, meta, value, onChange, studyDate 
                           onChange={function(nextValue){ onChange(updateStructuredValue(value || meta.defaultRaw || "", row.rowIndex, input.tokenIndex, nextValue)); }}
                           width={row.kind === "four-box" ? 120 : isSentenceCell ? 280 : 170}
                           multiline={isSentenceCell}
+                          textStyle={textStyle}
                         />
                         {!!input.suffix && <span style={{fontSize:13,fontWeight:600,color:"#475569",minWidth:36}}>{input.suffix}</span>}
                       </React.Fragment>
@@ -4577,6 +4645,7 @@ function ImportedStructuredField({ fieldLabel, meta, value, onChange, studyDate 
                       placeholder={getReference(row.rowIndex, row.calcInput.tokenIndex) || "Weight reference"}
                       onChange={function(nextValue){ onChange(updateStructuredValue(value || meta.defaultRaw || "", row.rowIndex, row.calcInput.tokenIndex, nextValue)); }}
                       width={180}
+                      textStyle={textStyle}
                     />
                     {!!row.note && <div style={{fontSize:12,color:"#64748B"}}>{row.note}</div>}
                   </div>
@@ -4589,6 +4658,7 @@ function ImportedStructuredField({ fieldLabel, meta, value, onChange, studyDate 
                       onChange={function(nextValue){ onChange(updateStructuredValue(value || meta.defaultRaw || "", row.rowIndex, row.noteInput.tokenIndex, nextValue)); }}
                       width={320}
                       multiline={true}
+                      textStyle={textStyle}
                     />
                   </div>
                 )}
@@ -4601,8 +4671,9 @@ function ImportedStructuredField({ fieldLabel, meta, value, onChange, studyDate 
   );
 }
 
-function ImportedStructuredPreview({ meta, value }) {
+function ImportedStructuredPreview({ meta, value, textStyle }) {
   var parsed = parseStructuredField(meta, value || (meta && meta.defaultRaw) || "");
+  var previewStyle = resolveTextStyle(textStyle, {});
   return (
     <div style={{display:"grid",gap:10}}>
       {parsed.rows.map(function(row, idx) {
@@ -4610,7 +4681,7 @@ function ImportedStructuredPreview({ meta, value }) {
           return (
             <div key={idx} style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
               {row.texts.map(function(text, textIdx) {
-                return <div key={textIdx} style={{padding:"8px 10px",border:"1px solid #BFDBFE",borderRadius:8,background:"#F8FBFF",whiteSpace:"pre-wrap",fontSize:12,color:"#1E3A8A"}}>{text}</div>;
+                return <div key={textIdx} style={Object.assign({}, previewStyle, {padding:"8px 10px",border:"1px solid #BFDBFE",borderRadius:8,background:"#F8FBFF",whiteSpace:"pre-wrap",color:"#1E3A8A"})}>{text}</div>;
               })}
             </div>
           );
@@ -4623,7 +4694,7 @@ function ImportedStructuredPreview({ meta, value }) {
                 {row.inputs.map(function(input, inputIdx) {
                   return (
                     <React.Fragment key={inputIdx}>
-                      <div style={{minWidth:100,padding:"8px 10px",border:"1px solid #CBD5E1",borderRadius:8,background:"#fff",fontSize:12,color:"#0F172A",whiteSpace:"pre-wrap"}}>{cleanStructuredToken(input.value) || "—"}</div>
+                      <div style={Object.assign({}, previewStyle, {minWidth:100,padding:"8px 10px",border:"1px solid #CBD5E1",borderRadius:8,background:"#fff",color:"#0F172A",whiteSpace:"pre-wrap"})}>{cleanStructuredToken(input.value) || "—"}</div>
                       {!!input.suffix && <span style={{fontSize:12,color:"#64748B",fontWeight:600}}>{input.suffix}</span>}
                     </React.Fragment>
                   );
@@ -4631,12 +4702,12 @@ function ImportedStructuredPreview({ meta, value }) {
                 {!!row.note && <span style={{fontSize:12,color:"#64748B"}}>{row.note}</span>}
               </div>
               {!!cleanStructuredToken(row.calcInput && row.calcInput.value) && (
-                <div style={{marginTop:8,padding:"8px 10px",border:"1px solid #BFDBFE",borderRadius:8,background:"#EFF6FF",fontSize:12,color:"#1D4ED8",fontWeight:700}}>
+                <div style={Object.assign({}, previewStyle, {marginTop:8,padding:"8px 10px",border:"1px solid #BFDBFE",borderRadius:8,background:"#EFF6FF",color:"#1D4ED8",fontWeight:700})}>
                   {cleanStructuredToken(row.calcInput.value)}
                 </div>
               )}
               {!!cleanStructuredToken(row.noteInput && row.noteInput.value) && (
-                <div style={{marginTop:8,padding:"8px 10px",border:"1px solid #CBD5E1",borderRadius:8,background:"#fff",fontSize:12,color:"#0F172A",whiteSpace:"pre-wrap"}}>
+                <div style={Object.assign({}, previewStyle, {marginTop:8,padding:"8px 10px",border:"1px solid #CBD5E1",borderRadius:8,background:"#fff",color:"#0F172A",whiteSpace:"pre-wrap"})}>
                   {cleanStructuredToken(row.noteInput.value)}
                 </div>
               )}
@@ -4693,6 +4764,7 @@ function RadReport() {
   var [urgency, setUrgency]         = useState("Routine");
   var [aiLoad, setAiLoad]           = useState({});
   var [toast, setToast]             = useState(null);
+  var [contentStyles, setContentStyles] = useState({});
   var [templateQuery, setTemplateQuery] = useState("");
   var [fieldShortcutInput, setFieldShortcutInput] = useState({});
   var [draftQuery, setDraftQuery] = useState("");
@@ -4727,6 +4799,18 @@ function RadReport() {
   var resetShortcutEditor = useCallback(function() {
     setShortcutEditor(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
   }, []);
+
+  var getContentStyle = function(key) {
+    return normalizeTextStyle(contentStyles[key]);
+  };
+
+  var updateContentStyle = function(key, patch) {
+    setContentStyles(function(prev) {
+      var next = Object.assign({}, prev);
+      next[key] = normalizeTextStyle(Object.assign({}, next[key] || DEFAULT_TEXT_STYLE, patch || {}));
+      return next;
+    });
+  };
 
   var setPatientField = function(key, value) {
     setPatient(function(prev) {
@@ -4976,6 +5060,7 @@ function RadReport() {
     setAuthUser(null);
     setSavedReports([]);
     setCustomShortcuts([]);
+    setContentStyles({});
     setShortcutAdminQuery("");
     setShortcutEditor(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
     setActiveDraftId(null);
@@ -4995,6 +5080,7 @@ function RadReport() {
       patient: patient,
       findings: findings,
       tags: tags,
+      contentStyles: contentStyles,
       impression: impression,
       recommendation: recommendation,
       urgency: urgency,
@@ -5011,6 +5097,7 @@ function RadReport() {
           savedAt: existing.savedAt,
           findings: existing.findings,
           tags: existing.tags,
+          contentStyles: existing.contentStyles,
           impression: existing.impression,
           recommendation: existing.recommendation,
           urgency: existing.urgency
@@ -5025,7 +5112,7 @@ function RadReport() {
     });
     setActiveDraftId(snapshot.id);
     showToast("💾 Draft saved", "success");
-  }, [authUser, activeDraftId, patient, modality, region, findings, tags, impression, recommendation, urgency, persistAllDrafts, showToast]);
+  }, [authUser, activeDraftId, patient, modality, region, findings, tags, contentStyles, impression, recommendation, urgency, persistAllDrafts, showToast]);
 
   var loadDraft = useCallback(function(draft) {
     importedTemplateSeedRef.current = (draft && draft.modality && draft.region) ? (draft.modality + "__" + draft.region) : "";
@@ -5035,6 +5122,7 @@ function RadReport() {
     setPatient(Object.assign(makeEmptyPatient(), draft.patient || {}));
     setFindings(draft.findings || {});
     setTags(draft.tags || {});
+    setContentStyles(draft.contentStyles || {});
     setImpression(draft.impression || "");
     setRec(draft.recommendation || "");
     setUrgency(draft.urgency || "Routine");
@@ -5048,6 +5136,7 @@ function RadReport() {
       savedAt: new Date().toISOString(),
       findings: ver.findings || {},
       tags: ver.tags || {},
+      contentStyles: ver.contentStyles || draft.contentStyles || {},
       impression: ver.impression || "",
       recommendation: ver.recommendation || "",
       urgency: ver.urgency || "Routine"
@@ -5194,6 +5283,7 @@ function RadReport() {
     setPatient(makeEmptyPatient());
     setFindings({});
     setTags({});
+    setContentStyles({});
     setImpression("");
     setRec("");
     setUrgency("Routine");
@@ -6110,7 +6200,8 @@ function RadReport() {
             </div>
             <div><label style={lbl}>Institution</label><input className="ri" style={inp()} placeholder="Hospital / Clinic" value={patient.institution} onChange={function(e){setPatient(function(p){return Object.assign({},p,{institution:e.target.value});});}} /></div>
             <div style={{gridColumn:"1/-1"}}><label style={lbl}>Clinical History / Indication</label>
-              <textarea className="ri" style={ta({minHeight:60})} placeholder="e.g. Pain RUQ, rule out cholelithiasis…" value={patient.clinicalInfo} onChange={function(e){setPatient(function(p){return Object.assign({},p,{clinicalInfo:e.target.value});});}} />
+              <TextStyleToolbar value={getContentStyle("patient__clinicalInfo")} onChange={function(patch){ updateContentStyle("patient__clinicalInfo", patch); }} />
+              <textarea className="ri" style={resolveTextStyle(getContentStyle("patient__clinicalInfo"), ta({minHeight:60}))} placeholder="e.g. Pain RUQ, rule out cholelithiasis…" value={patient.clinicalInfo} onChange={function(e){setPatient(function(p){return Object.assign({},p,{clinicalInfo:e.target.value});});}} />
             </div>
           </div>
         </div>
@@ -6226,6 +6317,8 @@ function RadReport() {
                         value={getF(sec.label, field)}
                         onChange={function(v){ setF(sec.label, field, v); }}
                         studyDate={patient.studyDate}
+                        textStyle={getContentStyle(k)}
+                        onTextStyleChange={function(patch){ updateContentStyle(k, patch); }}
                       />
                     );
                   }
@@ -6264,6 +6357,8 @@ function RadReport() {
                       onInlineShortcutApplied={function(resolved){
                         showToast("Shortcut " + resolved.code + " inserted into " + field, "success");
                       }}
+                      textStyle={getContentStyle(k)}
+                      onTextStyleChange={function(patch){ updateContentStyle(k, patch); }}
                     />
                   );
                 })}
@@ -6344,7 +6439,8 @@ function RadReport() {
               <div style={{fontSize:11,color:"#6366F1"}}><b>Generate</b> — reads all findings &nbsp;|&nbsp; <b>Expand</b> — elaborates your draft &nbsp;|&nbsp; <b>🎤 Voice</b> — dictate directly</div>
             </div>
             <label style={lbl}>Impression Text</label>
-            <textarea className="ri" style={ta({minHeight:150,borderColor:activeKey==="impression"?"#DC2626":(aiLoad["impression"]||aiLoad["impExp"])?"#7C3AED":C.bdr,background:activeKey==="impression"?"#FFF5F5":(aiLoad["impression"]||aiLoad["impExp"])?"#F5F3FF":"#FAFCFF"})}
+            <TextStyleToolbar value={getContentStyle("impression")} onChange={function(patch){ updateContentStyle("impression", patch); }} />
+            <textarea className="ri" style={resolveTextStyle(getContentStyle("impression"), ta({minHeight:150,borderColor:activeKey==="impression"?"#DC2626":(aiLoad["impression"]||aiLoad["impExp"])?"#7C3AED":C.bdr,background:activeKey==="impression"?"#FFF5F5":(aiLoad["impression"]||aiLoad["impExp"])?"#F5F3FF":"#FAFCFF"}))}
               placeholder={activeKey==="impression"?"🔴 Listening… speak now":"Type, dictate, or use AI…"}
               value={impression} onChange={function(e){setImpression(e.target.value);}} />
             <div style={{display:"flex",gap:7,flexWrap:"wrap",marginTop:8}}>
@@ -6366,7 +6462,8 @@ function RadReport() {
               );})}
             </div>
             <label style={lbl}>Recommendations</label>
-            <textarea className="ri" style={ta()} placeholder="e.g. Clinical correlation recommended. Follow-up in 6 months…" value={recommendation} onChange={function(e){setRec(e.target.value);}} />
+            <TextStyleToolbar value={getContentStyle("recommendation")} onChange={function(patch){ updateContentStyle("recommendation", patch); }} />
+            <textarea className="ri" style={resolveTextStyle(getContentStyle("recommendation"), ta())} placeholder="e.g. Clinical correlation recommended. Follow-up in 6 months…" value={recommendation} onChange={function(e){setRec(e.target.value);}} />
           </div>
         </div>
         <div style={{display:"flex",justifyContent:"flex-end",gap:12}}>
@@ -6534,7 +6631,7 @@ function RadReport() {
               {patient.clinicalInfo && (
                 <div style={{flex:1,padding:"10px 14px",background:"#F0F4FF",borderRadius:8,borderLeft:"3px solid "+C.col}}>
                   <div style={{fontSize:10,fontWeight:700,color:C.soft,textTransform:"uppercase"}}>Clinical History</div>
-                  <div style={{fontSize:13,color:C.txt,marginTop:2}}>{patient.clinicalInfo}</div>
+                  <div style={resolveTextStyle(getContentStyle("patient__clinicalInfo"), {color:C.txt,marginTop:2,whiteSpace:"pre-wrap"})}>{patient.clinicalInfo}</div>
                 </div>
               )}
               {hasAbn && <div style={{padding:"8px 14px",borderRadius:8,background:"#FFF0EE",border:"1px solid #FFCCC7"}}><div style={{fontSize:10,fontWeight:700,color:C.err,textTransform:"uppercase"}}>Abnormal</div><div style={{fontSize:14,fontWeight:800,color:C.err}}>{abnF.length} field(s)</div></div>}
@@ -6561,13 +6658,15 @@ function RadReport() {
                     <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>
                       {sec.fields.map(function(field){
                         var meta = getFieldMeta(sec.label, field);
+                        var k = sec.label + "__" + field;
+                        var fieldTextStyle = getContentStyle(k);
                         var t = getT(sec.label,field);
                         if (meta && isStructuredControlType(meta.controlType)) {
                           return (
                             <tr key={field} style={{borderBottom:"1px solid "+C.bdr}}>
                               <td style={{padding:"10px 0",fontSize:13,fontWeight:600,color:C.soft,width:200,verticalAlign:"top"}}>{meta.paramName || field}</td>
                               <td style={{padding:"10px 12px",verticalAlign:"top"}}>
-                                <ImportedStructuredPreview meta={meta} value={getF(sec.label, field)} />
+                                <ImportedStructuredPreview meta={meta} value={getF(sec.label, field)} textStyle={fieldTextStyle} />
                               </td>
                               <td style={{padding:"10px 0"}} />
                             </tr>
@@ -6577,7 +6676,7 @@ function RadReport() {
                         return (
                           <tr key={field} style={{borderBottom:"1px solid "+C.bdr}}>
                             <td style={{padding:"7px 0",fontSize:13,fontWeight:600,color:C.soft,width:200,verticalAlign:"top"}}>{field}</td>
-                            <td style={{padding:"7px 12px",fontSize:13,color:t==="ab"?C.err:C.txt,fontWeight:t==="ab"?600:400,verticalAlign:"top"}}>{getFieldText(sec.label, field)||"—"}</td>
+                            <td style={resolveTextStyle(fieldTextStyle, {padding:"7px 12px",color:t==="ab"?C.err:C.txt,fontWeight:fieldTextStyle.bold ? 700 : (t==="ab"?600:400),verticalAlign:"top",whiteSpace:"pre-wrap"})}>{getFieldText(sec.label, field)||"—"}</td>
                             <td style={{padding:"7px 0",textAlign:"right",verticalAlign:"top"}}>
                               {t && <span style={{fontSize:10,padding:"2px 8px",borderRadius:20,fontWeight:700,background:t==="n"?"#E8F8F2":"#FEECEC",color:t==="n"?C.ok:C.err,border:"1px solid "+(t==="n"?"#A8E6CF":"#FFACAC")}}>{t==="n"?"NORMAL":"ABNORMAL"}</span>}
                             </td>
@@ -6593,13 +6692,13 @@ function RadReport() {
           {impression && (
             <div style={Object.assign({},crd,{border:"2px solid "+(hasAbn?"#FFACAC":"#A8E6CF")})}>
               <div style={Object.assign(cHd(hasAbn?C.err:C.ok),{background:hasAbn?"#FFF5F5":"#F5FFF9"})}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Impression & Conclusion</span></div>
-              <div style={{padding:"20px 32px",fontSize:14,lineHeight:1.85,color:C.txt,whiteSpace:"pre-wrap"}}>{impression}</div>
+              <div style={resolveTextStyle(getContentStyle("impression"), {padding:"20px 32px",lineHeight:1.85,color:C.txt,whiteSpace:"pre-wrap"})}>{impression}</div>
             </div>
           )}
           {recommendation && (
             <div style={crd}>
               <div style={cHd(C.warn)}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Recommendations</span></div>
-              <div style={{padding:"20px 32px",fontSize:14,lineHeight:1.85,whiteSpace:"pre-wrap",color:C.txt}}>{recommendation}</div>
+              <div style={resolveTextStyle(getContentStyle("recommendation"), {padding:"20px 32px",lineHeight:1.85,whiteSpace:"pre-wrap",color:C.txt})}>{recommendation}</div>
             </div>
           )}
           <div style={{background:C.sur,borderRadius:12,padding:"22px 32px",border:"1px solid "+C.bdr,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
