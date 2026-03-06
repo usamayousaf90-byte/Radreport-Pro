@@ -3709,6 +3709,26 @@ const SHORTCUTS = (function() {
     });
   });
 
+  var importedShortcuts = [];
+  try {
+    if (typeof window !== "undefined" && Array.isArray(window.RRP_IMPORTED_SHORTCUTS)) {
+      importedShortcuts = window.RRP_IMPORTED_SHORTCUTS.map(sanitizeShortcut).filter(Boolean);
+    }
+  } catch (e) {}
+
+  if (importedShortcuts.length) {
+    var seenShortcutCodes = {};
+    out.forEach(function(sc) {
+      seenShortcutCodes[normalizeShortcutCode(sc.code)] = true;
+    });
+    importedShortcuts.forEach(function(sc) {
+      var code = normalizeShortcutCode(sc.code);
+      if (seenShortcutCodes[code]) return;
+      seenShortcutCodes[code] = true;
+      out.push(sc);
+    });
+  }
+
   if (out.length < 1000) {
     console.warn("Shortcut library has fewer than 1000 entries:", out.length);
   }
