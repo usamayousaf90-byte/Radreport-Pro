@@ -4152,6 +4152,12 @@ function cleanStructuredToken(token) {
   return value;
 }
 
+function readStructuredInputValue(token) {
+  var value = String(token == null ? "" : token);
+  if (value.trim().toLowerCase() === "undefined") return "";
+  return value;
+}
+
 function parseStructuredRows(rawValue) {
   return String(rawValue == null ? "" : rawValue).split("|").map(function(row) {
     return row.split("•");
@@ -4196,9 +4202,9 @@ function parseStructuredField(meta, rawValue) {
         tokens: tokens,
         label: cleanStructuredToken(tokens[0]),
         inputs: [
-          { tokenIndex: 1, value: cleanStructuredToken(tokens[1]), suffix: cleanStructuredToken(tokens[2]) },
-          { tokenIndex: 3, value: cleanStructuredToken(tokens[3]), suffix: cleanStructuredToken(tokens[4]) },
-          { tokenIndex: 5, value: cleanStructuredToken(tokens[5]), suffix: "" }
+          { tokenIndex: 1, value: readStructuredInputValue(tokens[1]), suffix: cleanStructuredToken(tokens[2]) },
+          { tokenIndex: 3, value: readStructuredInputValue(tokens[3]), suffix: cleanStructuredToken(tokens[4]) },
+          { tokenIndex: 5, value: readStructuredInputValue(tokens[5]), suffix: "" }
         ],
         note: cleanStructuredToken(tokens[17])
       });
@@ -4220,7 +4226,7 @@ function parseStructuredField(meta, rawValue) {
         inputs: tokenPairs.slice(0, getCrlVisibleCount(type)).map(function(pair) {
           return {
             tokenIndex: pair.valueIndex,
-            value: cleanStructuredToken(tokens[pair.valueIndex]),
+            value: readStructuredInputValue(tokens[pair.valueIndex]),
             suffix: cleanStructuredToken(tokens[pair.suffixIndex])
           };
         })
@@ -4228,14 +4234,43 @@ function parseStructuredField(meta, rawValue) {
       return;
     }
 
-    if (type === 9 || type === 10 || type === 11 || type === 12 || type === 21 || type === 22 || type === 23 || type === 24 || type === 25) {
+    if (type === 9) {
+      parsedRows.push({
+        kind: "measure-note",
+        rowIndex: rowIndex,
+        tokens: tokens,
+        label: cleanStructuredToken(tokens[0]),
+        inputs: [1, 2, 3].map(function(tokenIndex) {
+          return { tokenIndex: tokenIndex, value: readStructuredInputValue(tokens[tokenIndex]), suffix: "" };
+        }),
+        noteInput: { tokenIndex: 4, value: readStructuredInputValue(tokens[4]) },
+        note: cleanStructuredToken(tokens[5])
+      });
+      return;
+    }
+
+    if (type === 10 || type === 11 || type === 12) {
+      parsedRows.push({
+        kind: "measure-note",
+        rowIndex: rowIndex,
+        tokens: tokens,
+        label: cleanStructuredToken(tokens[0]),
+        inputs: [1, 2, 3, 4].map(function(tokenIndex) {
+          return { tokenIndex: tokenIndex, value: readStructuredInputValue(tokens[tokenIndex]), suffix: "" };
+        }),
+        noteInput: { tokenIndex: 5, value: readStructuredInputValue(tokens[5]) }
+      });
+      return;
+    }
+
+    if (type === 21 || type === 22 || type === 23 || type === 24 || type === 25) {
       parsedRows.push({
         kind: "four-box",
         rowIndex: rowIndex,
         tokens: tokens,
         label: cleanStructuredToken(tokens[0]),
         inputs: [1, 2, 3, 4].map(function(tokenIndex) {
-          return { tokenIndex: tokenIndex, value: cleanStructuredToken(tokens[tokenIndex]), suffix: "" };
+          return { tokenIndex: tokenIndex, value: readStructuredInputValue(tokens[tokenIndex]), suffix: "" };
         }),
         note: cleanStructuredToken(tokens[5])
       });
@@ -4263,7 +4298,7 @@ function structuredFieldHasContent(meta, rawValue) {
       if (!value) return false;
       if ((type === 9 || type === 10 || type === 11 || type === 12) && value === "0") return false;
       return true;
-    }) || !!cleanStructuredToken(row.note);
+    }) || !!cleanStructuredToken(row.noteInput && row.noteInput.value) || !!cleanStructuredToken(row.note);
   });
 }
 
@@ -4279,6 +4314,9 @@ function structuredFieldToText(meta, rawValue) {
     }).filter(Boolean);
     var line = row.label ? (row.label + ": ") : "";
     line += parts.join(" | ");
+    if (cleanStructuredToken(row.noteInput && row.noteInput.value)) {
+      line += (parts.length ? " | " : "") + cleanStructuredToken(row.noteInput.value);
+    }
     if (cleanStructuredToken(row.note)) {
       line += (parts.length ? " | " : "") + cleanStructuredToken(row.note);
     }
@@ -4355,6 +4393,17 @@ function ImportedStructuredField({ fieldLabel, meta, value, onChange }) {
                 {!!row.note && row.kind !== "three-box" && (
                   <div style={{marginTop:6,fontSize:11,color:"#64748B"}}>{row.note}</div>
                 )}
+                {!!row.noteInput && (
+                  <div style={{marginTop:10}}>
+                    <StructuredFieldInput
+                      value={row.noteInput.value}
+                      placeholder={row.kind === "measure-note" ? "Type note / description..." : ""}
+                      onChange={function(nextValue){ onChange(updateStructuredValue(value || meta.defaultRaw || "", row.rowIndex, row.noteInput.tokenIndex, nextValue)); }}
+                      width={320}
+                      multiline={true}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -4381,16 +4430,23 @@ function ImportedStructuredPreview({ meta, value }) {
         return (
           <div key={idx} style={{display:"grid",gridTemplateColumns:"200px 1fr",gap:12,alignItems:"start"}}>
             <div style={{fontSize:13,fontWeight:700,color:"#475569"}}>{row.label}</div>
-            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-              {row.inputs.map(function(input, inputIdx) {
-                return (
-                  <React.Fragment key={inputIdx}>
-                    <div style={{minWidth:100,padding:"8px 10px",border:"1px solid #CBD5E1",borderRadius:8,background:"#fff",fontSize:12,color:"#0F172A"}}>{input.value || "—"}</div>
-                    {!!input.suffix && <span style={{fontSize:12,color:"#64748B",fontWeight:600}}>{input.suffix}</span>}
-                  </React.Fragment>
-                );
-              })}
-              {!!row.note && <span style={{fontSize:12,color:"#64748B"}}>{row.note}</span>}
+            <div>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                {row.inputs.map(function(input, inputIdx) {
+                  return (
+                    <React.Fragment key={inputIdx}>
+                      <div style={{minWidth:100,padding:"8px 10px",border:"1px solid #CBD5E1",borderRadius:8,background:"#fff",fontSize:12,color:"#0F172A",whiteSpace:"pre-wrap"}}>{cleanStructuredToken(input.value) || "—"}</div>
+                      {!!input.suffix && <span style={{fontSize:12,color:"#64748B",fontWeight:600}}>{input.suffix}</span>}
+                    </React.Fragment>
+                  );
+                })}
+                {!!row.note && <span style={{fontSize:12,color:"#64748B"}}>{row.note}</span>}
+              </div>
+              {!!cleanStructuredToken(row.noteInput && row.noteInput.value) && (
+                <div style={{marginTop:8,padding:"8px 10px",border:"1px solid #CBD5E1",borderRadius:8,background:"#fff",fontSize:12,color:"#0F172A",whiteSpace:"pre-wrap"}}>
+                  {cleanStructuredToken(row.noteInput.value)}
+                </div>
+              )}
             </div>
           </div>
         );
