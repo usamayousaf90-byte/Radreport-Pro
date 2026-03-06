@@ -3218,6 +3218,231 @@ function AppHdr({ onBack, backTo, setStep, sub, right }) {
   );
 }
 
+function DoctorSideButton({ count, onClick, dark }) {
+  return (
+    <button
+      type="button"
+      className="np"
+      onClick={onClick}
+      style={{
+        position:"fixed",
+        right:18,
+        top:"50%",
+        transform:"translateY(-50%)",
+        zIndex:40,
+        padding:"12px 10px",
+        width:82,
+        borderRadius:18,
+        border:dark ? "1px solid rgba(255,255,255,.12)" : "1px solid rgba(13,33,55,.12)",
+        background:dark ? "linear-gradient(180deg,rgba(8,20,34,.94),rgba(15,35,58,.94))" : "linear-gradient(180deg,#FFFFFF,#F8FAFC)",
+        color:dark ? "#E2E8F0" : "#0D2137",
+        boxShadow:"0 18px 34px rgba(2,6,23,.18)",
+        display:"flex",
+        flexDirection:"column",
+        alignItems:"center",
+        gap:6,
+        cursor:"pointer",
+        fontFamily:"'DM Sans',sans-serif"
+      }}
+    >
+      <span style={{fontSize:18}}>👨‍⚕️</span>
+      <span style={{fontSize:11,fontWeight:800,letterSpacing:"1.1px",textTransform:"uppercase"}}>Doctors</span>
+      <span style={{fontSize:10,opacity:.68}}>{count} saved</span>
+    </button>
+  );
+}
+
+function DoctorDirectoryDrawer({
+  open,
+  onClose,
+  activeTab,
+  onTabChange,
+  doctors,
+  doctorForm,
+  onDoctorFormChange,
+  onAddDoctor,
+  onDeleteDoctor
+}) {
+  if (!open) return null;
+
+  var panelTabs = [
+    { key: "list", label: "List" },
+    { key: "add", label: "Add" },
+    { key: "delete", label: "Delete" }
+  ];
+  var fieldStyle = {
+    width:"100%",
+    padding:"10px 12px",
+    borderRadius:10,
+    border:"1px solid rgba(148,163,184,.28)",
+    background:"rgba(15,23,42,.58)",
+    color:"#E2E8F0",
+    outline:"none",
+    fontSize:14,
+    fontFamily:"'DM Sans',sans-serif"
+  };
+  var actionButton = {
+    padding:"10px 14px",
+    borderRadius:10,
+    border:"none",
+    background:"linear-gradient(135deg,#38BDF8,#818CF8)",
+    color:"#03111F",
+    fontWeight:800,
+    cursor:"pointer",
+    fontFamily:"'DM Sans',sans-serif"
+  };
+  var secondaryButton = {
+    padding:"10px 14px",
+    borderRadius:10,
+    border:"1px solid rgba(148,163,184,.25)",
+    background:"transparent",
+    color:"#CBD5E1",
+    cursor:"pointer",
+    fontFamily:"'DM Sans',sans-serif"
+  };
+
+  return (
+    <div
+      className="np"
+      style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(2,6,23,.44)",display:"flex",justifyContent:"flex-end"}}
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        onClick={function(e){ e.stopPropagation(); }}
+        style={{width:"min(420px,100%)",height:"100%",background:"linear-gradient(180deg,#07131F 0%,#0F1F31 100%)",color:"#E2E8F0",padding:"22px 20px",boxShadow:"-20px 0 48px rgba(2,6,23,.42)",overflowY:"auto",fontFamily:"'DM Sans',sans-serif"}}
+      >
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:16}}>
+          <div>
+            <div style={{fontSize:12,fontWeight:800,letterSpacing:"1.8px",textTransform:"uppercase",color:"#38BDF8"}}>Doctor Directory</div>
+            <div style={{fontSize:13,color:"rgba(226,232,240,.72)",marginTop:4}}>Manage saved doctors without keeping the whole list visible on the page.</div>
+          </div>
+          <button type="button" onClick={onClose} style={{border:"none",background:"transparent",color:"rgba(226,232,240,.72)",cursor:"pointer",fontSize:22,lineHeight:1,padding:0}}>×</button>
+        </div>
+
+        <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+          {panelTabs.map(function(tab) {
+            var active = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={function(){ onTabChange(tab.key); }}
+                style={{
+                  padding:"8px 14px",
+                  borderRadius:999,
+                  border:"1px solid " + (active ? "#38BDF8" : "rgba(148,163,184,.2)"),
+                  background:active ? "rgba(56,189,248,.16)" : "transparent",
+                  color:active ? "#38BDF8" : "#CBD5E1",
+                  fontWeight:700,
+                  cursor:"pointer",
+                  fontFamily:"'DM Sans',sans-serif"
+                }}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {activeTab === "list" && (
+          <div>
+            <div style={{fontSize:12,color:"rgba(226,232,240,.6)",marginBottom:12}}>{doctors.length} saved doctor{doctors.length === 1 ? "" : "s"}</div>
+            {doctors.length ? doctors.map(function(doctor) {
+              return (
+                <div key={doctor.name} style={{padding:"14px 15px",borderRadius:14,background:"rgba(15,23,42,.5)",border:"1px solid rgba(148,163,184,.16)",marginBottom:10}}>
+                  <div style={{fontSize:15,fontWeight:700,color:"#F8FAFC"}}>{doctor.name}</div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
+                    {!!doctor.specialty && <span style={{fontSize:11,padding:"4px 9px",borderRadius:999,background:"rgba(56,189,248,.12)",color:"#7DD3FC"}}>{doctor.specialty}</span>}
+                    {!!doctor.qualification && <span style={{fontSize:11,padding:"4px 9px",borderRadius:999,background:"rgba(129,140,248,.14)",color:"#C7D2FE"}}>{doctor.qualification}</span>}
+                    {!doctor.specialty && !doctor.qualification && <span style={{fontSize:11,color:"rgba(226,232,240,.48)"}}>No specialty or qualification saved</span>}
+                  </div>
+                </div>
+              );
+            }) : (
+              <div style={{padding:"14px 15px",borderRadius:14,background:"rgba(15,23,42,.5)",border:"1px solid rgba(148,163,184,.16)",fontSize:13,color:"rgba(226,232,240,.62)"}}>
+                No doctors saved yet. Use the Add tab to create the directory.
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "add" && (
+          <form onSubmit={function(e){ e.preventDefault(); onAddDoctor(); }}>
+            <div style={{display:"grid",gap:14}}>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:800,letterSpacing:"1.2px",textTransform:"uppercase",color:"#94A3B8",marginBottom:6}}>Doctor Name</label>
+                <input
+                  className="ri"
+                  style={fieldStyle}
+                  placeholder="Dr. Full Name"
+                  value={doctorForm.name}
+                  onChange={function(e){ onDoctorFormChange("name", e.target.value); }}
+                />
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:800,letterSpacing:"1.2px",textTransform:"uppercase",color:"#94A3B8",marginBottom:6}}>Specialty</label>
+                <select
+                  className="ri"
+                  style={fieldStyle}
+                  value={doctorForm.specialty}
+                  onChange={function(e){ onDoctorFormChange("specialty", e.target.value); }}
+                >
+                  {DOCTOR_SPECIALTY_OPTIONS.map(function(option) {
+                    return <option key={option} value={option}>{option}</option>;
+                  })}
+                </select>
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:800,letterSpacing:"1.2px",textTransform:"uppercase",color:"#94A3B8",marginBottom:6}}>Qualification</label>
+                <input
+                  list="doctor-qualification-list"
+                  className="ri"
+                  style={fieldStyle}
+                  placeholder="e.g. FCPS, FRCR"
+                  value={doctorForm.qualification}
+                  onChange={function(e){ onDoctorFormChange("qualification", e.target.value); }}
+                />
+                <datalist id="doctor-qualification-list">
+                  {DOCTOR_QUALIFICATION_SUGGESTIONS.map(function(option) {
+                    return <option key={option} value={option}>{option}</option>;
+                  })}
+                </datalist>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,marginTop:18,flexWrap:"wrap"}}>
+              <button type="submit" style={actionButton}>Save Doctor</button>
+              <button type="button" style={secondaryButton} onClick={function(){ onDoctorFormChange("reset", ""); }}>Reset</button>
+            </div>
+          </form>
+        )}
+
+        {activeTab === "delete" && (
+          <div>
+            <div style={{fontSize:12,color:"rgba(226,232,240,.6)",marginBottom:12}}>Remove doctors from the saved directory.</div>
+            {doctors.length ? doctors.map(function(doctor) {
+              return (
+                <div key={doctor.name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,padding:"13px 15px",borderRadius:14,background:"rgba(15,23,42,.5)",border:"1px solid rgba(148,163,184,.16)",marginBottom:10}}>
+                  <div>
+                    <div style={{fontSize:14,fontWeight:700,color:"#F8FAFC"}}>{doctor.name}</div>
+                    <div style={{fontSize:12,color:"rgba(226,232,240,.58)",marginTop:3}}>{[doctor.specialty, doctor.qualification].filter(Boolean).join(" • ") || "No metadata"}</div>
+                  </div>
+                  <button type="button" onClick={function(){ onDeleteDoctor(doctor.name); }} style={{padding:"8px 12px",borderRadius:10,border:"1px solid rgba(248,113,113,.35)",background:"rgba(127,29,29,.15)",color:"#FCA5A5",fontWeight:700,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Delete</button>
+                </div>
+              );
+            }) : (
+              <div style={{padding:"14px 15px",borderRadius:14,background:"rgba(15,23,42,.5)",border:"1px solid rgba(148,163,184,.16)",fontSize:13,color:"rgba(226,232,240,.62)"}}>
+                No saved doctors to delete.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MicBtn({ fKey, activeKey, dictKey, onStart, onStop }) {
   var isRec  = activeKey === fKey;
   var isDict = dictKey   === fKey;
@@ -3545,6 +3770,14 @@ var SESSION_KEY = "rrp_session_v1";
 var LOCAL_DRAFT_PREFIX = "rrp_local_drafts_";
 var LOCAL_SHORTCUT_PREFIX = "rrp_local_shortcuts_";
 var DOCTOR_DIRECTORY_KEY = "rrp_doctors_v1";
+var DOCTOR_SPECIALTY_OPTIONS = [
+  "Diagnostic Radiologist",
+  "Interventional Radiologist",
+  "Consultant Radiologist",
+  "Sonologist",
+  "Resident Radiologist"
+];
+var DOCTOR_QUALIFICATION_SUGGESTIONS = ["MCPS", "FCPS", "FRCR", "MD", "DNB", "MBBS"];
 var EMPTY_SHORTCUT_EDITOR = {
   lookupCode: "",
   code: "",
@@ -3596,17 +3829,50 @@ function normalizeDoctorName(v) {
   return String(v || "").replace(/\s+/g, " ").trim();
 }
 
+function normalizeDoctorSpecialty(v) {
+  return String(v || "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeDoctorQualification(v) {
+  return String(v || "").replace(/\s+/g, " ").trim();
+}
+
+function makeEmptyDoctorForm() {
+  return {
+    name: "",
+    specialty: DOCTOR_SPECIALTY_OPTIONS[0],
+    qualification: ""
+  };
+}
+
+function normalizeDoctorRecord(rawDoctor) {
+  if (typeof rawDoctor === "string") {
+    var legacyName = normalizeDoctorName(rawDoctor);
+    return legacyName ? { name: legacyName, specialty: "", qualification: "" } : null;
+  }
+  var doctor = rawDoctor && typeof rawDoctor === "object" ? rawDoctor : {};
+  var name = normalizeDoctorName(doctor.name);
+  if (!name) return null;
+  return {
+    name: name,
+    specialty: normalizeDoctorSpecialty(doctor.specialty),
+    qualification: normalizeDoctorQualification(doctor.qualification)
+  };
+}
+
 function loadDoctorDirectory() {
   try {
     var doctors = JSON.parse(localStorage.getItem(DOCTOR_DIRECTORY_KEY) || "[]");
     if (!Array.isArray(doctors)) return [];
     var seen = {};
-    return doctors.map(normalizeDoctorName).filter(function(name) {
-      if (!name) return false;
-      var key = name.toLowerCase();
+    return doctors.map(normalizeDoctorRecord).filter(function(doctor) {
+      if (!doctor || !doctor.name) return false;
+      var key = doctor.name.toLowerCase();
       if (seen[key]) return false;
       seen[key] = true;
       return true;
+    }).sort(function(a, b) {
+      return a.name.localeCompare(b.name);
     });
   } catch (e) {
     return [];
@@ -3614,7 +3880,10 @@ function loadDoctorDirectory() {
 }
 
 function saveDoctorDirectory(doctors) {
-  try { localStorage.setItem(DOCTOR_DIRECTORY_KEY, JSON.stringify(doctors || [])); } catch (e) {}
+  try {
+    var normalized = Array.isArray(doctors) ? doctors.map(normalizeDoctorRecord).filter(Boolean) : [];
+    localStorage.setItem(DOCTOR_DIRECTORY_KEY, JSON.stringify(normalized));
+  } catch (e) {}
 }
 
 function saveLocalDrafts(username, reports) {
@@ -4780,8 +5049,10 @@ function RadReport() {
   var [shortcutAdminQuery, setShortcutAdminQuery] = useState("");
   var [shortcutEditor, setShortcutEditor] = useState(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
   var [shortcutBackStep, setShortcutBackStep] = useState("home");
-  var [doctorNames, setDoctorNames] = useState([]);
-  var [doctorDraft, setDoctorDraft] = useState("");
+  var [doctorDirectory, setDoctorDirectory] = useState([]);
+  var [doctorForm, setDoctorForm] = useState(makeEmptyDoctorForm);
+  var [doctorDrawerOpen, setDoctorDrawerOpen] = useState(false);
+  var [doctorPanelTab, setDoctorPanelTab] = useState("list");
   var importedTemplateSeedRef = useRef("");
   var printRef = useRef(null);
 
@@ -4820,51 +5091,100 @@ function RadReport() {
     });
   };
 
-  var persistDoctorNames = useCallback(function(nextDoctors) {
-    setDoctorNames(nextDoctors);
-    saveDoctorDirectory(nextDoctors);
+  var persistDoctorDirectory = useCallback(function(nextDoctors) {
+    var normalized = (Array.isArray(nextDoctors) ? nextDoctors : [])
+      .map(normalizeDoctorRecord)
+      .filter(Boolean)
+      .sort(function(a, b) { return a.name.localeCompare(b.name); });
+    setDoctorDirectory(normalized);
+    saveDoctorDirectory(normalized);
   }, []);
 
-  var addDoctorName = useCallback(function(rawName, quiet) {
-    var name = normalizeDoctorName(rawName);
-    if (!name) {
-      if (!quiet) showToast("Enter a doctor name first", "error");
+  var setDoctorFormField = useCallback(function(key, value) {
+    if (key === "reset") {
+      setDoctorForm(makeEmptyDoctorForm());
+      return;
+    }
+    setDoctorForm(function(prev) {
+      var next = Object.assign({}, prev);
+      next[key] = value;
+      return next;
+    });
+  }, []);
+
+  var openDoctorPanel = useCallback(function(tab) {
+    setDoctorPanelTab(tab || "list");
+    setDoctorDrawerOpen(true);
+  }, []);
+
+  var closeDoctorPanel = useCallback(function() {
+    setDoctorDrawerOpen(false);
+  }, []);
+
+  var addDoctorRecord = useCallback(function(rawDoctor, quiet) {
+    var doctor = normalizeDoctorRecord(rawDoctor || doctorForm);
+    if (!doctor) {
+      if (!quiet) showToast("Enter the doctor name first", "error");
       return "";
     }
-    var existing = "";
-    doctorNames.some(function(item) {
-      if (item.toLowerCase() === name.toLowerCase()) {
+    var existing = null;
+    doctorDirectory.some(function(item) {
+      if (item.name.toLowerCase() === doctor.name.toLowerCase()) {
         existing = item;
         return true;
       }
       return false;
     });
     if (existing) {
-      if (!quiet) showToast(existing + " is already in the doctor list", "info");
-      return existing;
+      var updated = {
+        name: existing.name,
+        specialty: doctor.specialty || existing.specialty || "",
+        qualification: doctor.qualification || existing.qualification || ""
+      };
+      var changed = updated.specialty !== existing.specialty || updated.qualification !== existing.qualification;
+      if (!changed) {
+        if (!quiet) showToast(existing.name + " is already in the doctor list", "info");
+        return existing.name;
+      }
+      persistDoctorDirectory(doctorDirectory.map(function(item) {
+        return item.name.toLowerCase() === existing.name.toLowerCase() ? updated : item;
+      }));
+      setDoctorForm(makeEmptyDoctorForm());
+      if (!quiet) showToast("Doctor updated: " + existing.name, "success");
+      return existing.name;
     }
-    var nextDoctors = doctorNames.concat(name).sort(function(a, b) {
-      return a.localeCompare(b);
-    });
-    persistDoctorNames(nextDoctors);
-    setDoctorDraft("");
-    if (!quiet) showToast("Doctor added: " + name, "success");
-    return name;
-  }, [doctorNames, persistDoctorNames, showToast]);
+    persistDoctorDirectory(doctorDirectory.concat(doctor));
+    setDoctorForm(makeEmptyDoctorForm());
+    if (!quiet) showToast("Doctor added: " + doctor.name, "success");
+    return doctor.name;
+  }, [doctorDirectory, doctorForm, persistDoctorDirectory, showToast]);
 
-  var promptAddDoctor = useCallback(function(targetField) {
-    var entered = window.prompt("Doctor name", "");
-    if (entered == null) return;
-    var savedName = addDoctorName(entered);
-    if (savedName && targetField) setPatientField(targetField, savedName);
-  }, [addDoctorName]);
-
-  var removeDoctorName = useCallback(function(name) {
+  var removeDoctorRecord = useCallback(function(name) {
     var key = String(name || "").toLowerCase();
-    var nextDoctors = doctorNames.filter(function(item) { return item.toLowerCase() !== key; });
-    persistDoctorNames(nextDoctors);
+    var nextDoctors = doctorDirectory.filter(function(item) { return item.name.toLowerCase() !== key; });
+    persistDoctorDirectory(nextDoctors);
     showToast("Removed doctor: " + name, "info");
-  }, [doctorNames, persistDoctorNames, showToast]);
+  }, [doctorDirectory, persistDoctorDirectory, showToast]);
+
+  var getDoctorOptionNames = useCallback(function(selectedName) {
+    var names = doctorDirectory.map(function(doctor) { return doctor.name; });
+    if (selectedName && names.indexOf(selectedName) === -1) return [selectedName].concat(names);
+    return names;
+  }, [doctorDirectory]);
+
+  var doctorDirectoryDrawer = (
+    <DoctorDirectoryDrawer
+      open={doctorDrawerOpen}
+      onClose={closeDoctorPanel}
+      activeTab={doctorPanelTab}
+      onTabChange={setDoctorPanelTab}
+      doctors={doctorDirectory}
+      doctorForm={doctorForm}
+      onDoctorFormChange={setDoctorFormField}
+      onAddDoctor={function(){ addDoctorRecord(); }}
+      onDeleteDoctor={removeDoctorRecord}
+    />
+  );
 
   var customShortcutCodeSet = new Set(customShortcuts.map(function(sc) { return normalizeShortcutCode(sc.code); }));
   var allShortcuts = (function() {
@@ -5061,6 +5381,9 @@ function RadReport() {
     setSavedReports([]);
     setCustomShortcuts([]);
     setContentStyles({});
+    setDoctorDrawerOpen(false);
+    setDoctorPanelTab("list");
+    setDoctorForm(makeEmptyDoctorForm());
     setShortcutAdminQuery("");
     setShortcutEditor(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
     setActiveDraftId(null);
@@ -5247,7 +5570,7 @@ function RadReport() {
     seedUsers();
     var all = loadUsers();
     setUsers(all);
-    setDoctorNames(loadDoctorDirectory());
+    setDoctorDirectory(loadDoctorDirectory());
     try {
       var s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
       if (s && s.username && s.role) {
@@ -5784,46 +6107,13 @@ function RadReport() {
           <input className="ri" style={Object.assign({}, inp({background:"rgba(255,255,255,.08)",color:"#fff",border:"1px solid rgba(255,255,255,.15)"}), {maxWidth:420})} placeholder="Search templates, regions, modalities…" value={templateQuery} onChange={function(e){setTemplateQuery(e.target.value);}} />
         </div>
 
-        <div style={{marginBottom:18,animation:"fadeUp .6s ease .76s both",borderRadius:18,background:"linear-gradient(160deg,rgba(255,255,255,.06) 0%,rgba(255,255,255,.02) 100%)",border:"1px solid rgba(255,255,255,.09)",backdropFilter:"blur(16px)",padding:"18px 20px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap",marginBottom:12}}>
-            <div>
-              <div style={{fontSize:11,color:"#38BDF8",fontWeight:800,letterSpacing:"2px",textTransform:"uppercase"}}>Doctor Directory</div>
-              <div style={{fontSize:13,color:"rgba(255,255,255,.45)",marginTop:4}}>Add doctors here once, then select them later for scan performer and finalizing doctor.</div>
-            </div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,.38)"}}>{doctorNames.length} saved</div>
+        <div style={{marginBottom:18,animation:"fadeUp .6s ease .76s both",display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+          <div style={{fontSize:12,color:"rgba(255,255,255,.38)"}}>
+            {doctorDirectory.length} doctor{doctorDirectory.length === 1 ? "" : "s"} saved in the side directory.
           </div>
-          <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
-            <input
-              className="ri"
-              style={Object.assign({}, inp({background:"rgba(255,255,255,.08)",color:"#fff",border:"1px solid rgba(255,255,255,.15)"}), {maxWidth:360})}
-              placeholder="Add doctor name"
-              value={doctorDraft}
-              onChange={function(e){ setDoctorDraft(e.target.value); }}
-              onKeyDown={function(e){
-                if (e.key !== "Enter") return;
-                e.preventDefault();
-                addDoctorName(doctorDraft);
-              }}
-            />
-            <button style={btn("linear-gradient(135deg,#0EA5E9,#38BDF8)", "#03111F")} onClick={function(){ addDoctorName(doctorDraft); }}>+ Add Doctor</button>
-          </div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {doctorNames.length ? doctorNames.map(function(name) {
-              return (
-                <div key={name} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 11px",borderRadius:18,background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.09)"}}>
-                  <span style={{fontSize:12,color:"#fff",fontWeight:600}}>{name}</span>
-                  <button
-                    type="button"
-                    onClick={function(){ removeDoctorName(name); }}
-                    style={{border:"none",background:"transparent",color:"rgba(255,255,255,.45)",cursor:"pointer",fontSize:12,fontWeight:800,padding:0}}
-                  >
-                    x
-                  </button>
-                </div>
-              );
-            }) : (
-              <div style={{fontSize:12,color:"rgba(255,255,255,.35)"}}>No saved doctors yet. Add them here before you start reporting.</div>
-            )}
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            <button style={obtn("#38BDF8")} onClick={function(){ openDoctorPanel("list"); }}>Doctor List</button>
+            <button style={btn("linear-gradient(135deg,#0EA5E9,#38BDF8)", "#03111F")} onClick={function(){ openDoctorPanel("add"); }}>+ Add Doctor</button>
           </div>
         </div>
 
@@ -5979,6 +6269,9 @@ function RadReport() {
           <span style={{fontSize:10,color:"rgba(255,255,255,.2)",letterSpacing:"1px",fontWeight:600}}>v2.0 PRO</span>
         </div>
       </div>
+
+      <DoctorSideButton count={doctorDirectory.length} onClick={function(){ openDoctorPanel("list"); }} dark={true} />
+      {doctorDirectoryDrawer}
 
     </div>
   );
@@ -6193,7 +6486,7 @@ function RadReport() {
               <label style={lbl}>Scan Performed By</label>
               <select className="ri" style={inp({cursor:"pointer"})} value={patient.scanDoctor || ""} onChange={function(e){ setPatientField("scanDoctor", e.target.value); }}>
                 <option value="">Select doctor</option>
-                {((patient.scanDoctor && doctorNames.indexOf(patient.scanDoctor) === -1) ? [patient.scanDoctor].concat(doctorNames) : doctorNames).map(function(name) {
+                {getDoctorOptionNames(patient.scanDoctor).map(function(name) {
                   return <option key={name} value={name}>{name}</option>;
                 })}
               </select>
@@ -6209,6 +6502,8 @@ function RadReport() {
           <button style={btn(C.col)} disabled={!patient.name} onClick={function(){setStep("template");}}>Continue to Findings →</button>
         </div>
       </div>
+      <DoctorSideButton count={doctorDirectory.length} onClick={function(){ openDoctorPanel("list"); }} />
+      {doctorDirectoryDrawer}
     </div>
   );
 
@@ -6246,16 +6541,19 @@ function RadReport() {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:12}}>
             <div>
               <div style={{fontWeight:800,fontSize:14,color:C.navy}}>Doctors for This Report</div>
-              <div style={{fontSize:11,color:C.soft,marginTop:3}}>Choose who performed the scan and who will finalize the report.</div>
+              <div style={{fontSize:11,color:C.soft,marginTop:3}}>Choose who performed the scan and who will finalize the report. Manage the saved directory from the side panel.</div>
             </div>
-            <button style={obtn(C.col)} onClick={function(){ promptAddDoctor(); }}>+ Add Doctor</button>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button style={obtn(C.col)} onClick={function(){ openDoctorPanel("list"); }}>Doctor List</button>
+              <button style={btn(C.col, "#fff")} onClick={function(){ openDoctorPanel("add"); }}>Manage Doctors</button>
+            </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14}}>
             <div>
               <label style={lbl}>Scan Performed By</label>
               <select className="ri" style={inp({cursor:"pointer"})} value={patient.scanDoctor || ""} onChange={function(e){ setPatientField("scanDoctor", e.target.value); }}>
                 <option value="">Select doctor</option>
-                {((patient.scanDoctor && doctorNames.indexOf(patient.scanDoctor) === -1) ? [patient.scanDoctor].concat(doctorNames) : doctorNames).map(function(name) {
+                {getDoctorOptionNames(patient.scanDoctor).map(function(name) {
                   return <option key={name} value={name}>{name}</option>;
                 })}
               </select>
@@ -6264,7 +6562,7 @@ function RadReport() {
               <label style={lbl}>Reporting / Finalizing Doctor</label>
               <select className="ri" style={inp({cursor:"pointer"})} value={patient.reportingDoc || ""} onChange={function(e){ setPatientField("reportingDoc", e.target.value); }}>
                 <option value="">Select doctor</option>
-                {((patient.reportingDoc && doctorNames.indexOf(patient.reportingDoc) === -1) ? [patient.reportingDoc].concat(doctorNames) : doctorNames).map(function(name) {
+                {getDoctorOptionNames(patient.reportingDoc).map(function(name) {
                   return <option key={name} value={name}>{name}</option>;
                 })}
               </select>
@@ -6372,6 +6670,8 @@ function RadReport() {
           <button style={btn(C.col)} onClick={function(){setStep("impression");}}>Next: Impression →</button>
         </div>
       </div>
+      <DoctorSideButton count={doctorDirectory.length} onClick={function(){ openDoctorPanel("list"); }} />
+      {doctorDirectoryDrawer}
     </div>
   );
 
@@ -6395,7 +6695,7 @@ function RadReport() {
               <label style={lbl}>Scan Performed By</label>
               <select className="ri" style={inp({cursor:"pointer"})} value={patient.scanDoctor || ""} onChange={function(e){ setPatientField("scanDoctor", e.target.value); }}>
                 <option value="">Select doctor</option>
-                {((patient.scanDoctor && doctorNames.indexOf(patient.scanDoctor) === -1) ? [patient.scanDoctor].concat(doctorNames) : doctorNames).map(function(name) {
+                {getDoctorOptionNames(patient.scanDoctor).map(function(name) {
                   return <option key={name} value={name}>{name}</option>;
                 })}
               </select>
@@ -6404,13 +6704,16 @@ function RadReport() {
               <label style={lbl}>Finalizing Reporting Doctor</label>
               <select className="ri" style={inp({cursor:"pointer"})} value={patient.reportingDoc || ""} onChange={function(e){ setPatientField("reportingDoc", e.target.value); }}>
                 <option value="">Select doctor</option>
-                {((patient.reportingDoc && doctorNames.indexOf(patient.reportingDoc) === -1) ? [patient.reportingDoc].concat(doctorNames) : doctorNames).map(function(name) {
+                {getDoctorOptionNames(patient.reportingDoc).map(function(name) {
                   return <option key={name} value={name}>{name}</option>;
                 })}
               </select>
             </div>
             <div style={{display:"flex",alignItems:"flex-end"}}>
-              <button style={obtn(C.col)} onClick={function(){ promptAddDoctor(); }}>+ Add Doctor to List</button>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <button style={obtn(C.col)} onClick={function(){ openDoctorPanel("list"); }}>Doctor List</button>
+                <button style={btn(C.col, "#fff")} onClick={function(){ openDoctorPanel("add"); }}>Manage Doctors</button>
+              </div>
             </div>
           </div>
         </div>
@@ -6471,6 +6774,8 @@ function RadReport() {
           <button style={btn(C.col)} onClick={function(){setStep("preview");}}>Generate Report →</button>
         </div>
       </div>
+      <DoctorSideButton count={doctorDirectory.length} onClick={function(){ openDoctorPanel("list"); }} />
+      {doctorDirectoryDrawer}
     </div>
   );
 
