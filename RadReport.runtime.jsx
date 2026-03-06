@@ -2836,6 +2836,96 @@ const T = {
   }
 })();
 
+function buildSectionsFromFindingDefaults(findingDefaults) {
+  var grouped = {};
+  Object.keys(findingDefaults || {}).forEach(function(key) {
+    var parts = String(key || "").split("__");
+    var label = (parts[0] || "Template Notes").trim() || "Template Notes";
+    var field = (parts[1] || "Template Text").trim() || "Template Text";
+    if (!grouped[label]) grouped[label] = [];
+    if (grouped[label].indexOf(field) === -1) grouped[label].push(field);
+  });
+  var labels = Object.keys(grouped);
+  if (!labels.length) return [{ label: "Template Notes", fields: ["Template Text"] }];
+  return labels.map(function(label) {
+    return { label: label, fields: grouped[label] };
+  });
+}
+
+function normalizeImportedSections(rawSections, findingDefaults) {
+  var normalized = [];
+  if (Array.isArray(rawSections) && rawSections.length) {
+    normalized = rawSections.map(function(section, idx) {
+      var label = String((section && section.label) || ("Template Section " + (idx + 1))).trim() || ("Template Section " + (idx + 1));
+      var fields = Array.isArray(section && section.fields) && section.fields.length
+        ? section.fields.map(function(field, fIdx) {
+            return String(field || ("Template Text " + (fIdx + 1))).trim() || ("Template Text " + (fIdx + 1));
+          })
+        : ["Template Text"];
+      return { label: label, fields: fields };
+    });
+  }
+  if (!normalized.length) normalized = buildSectionsFromFindingDefaults(findingDefaults);
+  return normalized;
+}
+
+var IMPORTED_TEMPLATE_MAP = (function() {
+  var map = {};
+  var added = 0;
+  var imported = [];
+  try {
+    if (typeof window !== "undefined" && Array.isArray(window.RRP_IMPORTED_TEMPLATES)) {
+      imported = window.RRP_IMPORTED_TEMPLATES;
+    }
+  } catch (e) {}
+
+  imported.forEach(function(rawTpl) {
+    if (!rawTpl || typeof rawTpl !== "object") return;
+    var modality = canonicalModalityName(rawTpl.modality);
+    var region = String(rawTpl.region || "").trim();
+    if (!modality || !region || !T[modality]) return;
+
+    var rawDefaults = rawTpl.defaults && typeof rawTpl.defaults === "object" ? rawTpl.defaults : {};
+    var findingDefaults = {};
+    Object.keys(rawDefaults.findings || {}).forEach(function(key) {
+      findingDefaults[String(key)] = String(rawDefaults.findings[key] || "");
+    });
+
+    var sections = normalizeImportedSections(rawTpl.sections, findingDefaults);
+    sections.forEach(function(section) {
+      section.fields.forEach(function(field) {
+        var key = section.label + "__" + field;
+        if (typeof findingDefaults[key] === "undefined") findingDefaults[key] = "";
+      });
+    });
+
+    var normalized = {
+      modality: modality,
+      region: region,
+      code: String(rawTpl.code || "").trim(),
+      test: String(rawTpl.test || region).trim(),
+      sections: sections,
+      defaults: {
+        findings: findingDefaults,
+        impression: String(rawDefaults.impression || ""),
+        recommendation: String(rawDefaults.recommendation || "")
+      }
+    };
+
+    map[modality + "__" + region] = normalized;
+    if (!T[modality].sections[region]) {
+      T[modality].sections[region] = sections;
+      T[modality].regions.push(region);
+      added++;
+    }
+  });
+
+  if (typeof window !== "undefined") {
+    window.__rrpImportedTemplateCount = added;
+  }
+  return map;
+})();
+
 /* ══════════════════════════════════
    AI CALL — uses Vercel serverless /api/ai
    with offline fallback if API unavailable
@@ -3161,6 +3251,13 @@ function FindingField({
   else if (aiLoading){ border = "#7C3AED"; bg = "#F5F3FF"; }
   else if (tag==="ab"){ border = "#C0392B60"; bg = "#FFF5F5"; }
   else if (tag==="n") { border = "#2D9E6B60"; bg = "#F0FFF6"; }
+
+  useEffect(function() {
+    if (!inputRef.current) return;
+    inputRef.current.style.height = "auto";
+    inputRef.current.style.height = Math.max(88, inputRef.current.scrollHeight) + "px";
+  }, [val]);
+
   return (
     <div style={{marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
@@ -3171,13 +3268,18 @@ function FindingField({
         </div>
       </div>
       <div style={{display:"flex",gap:6,alignItems:"center"}}>
-        <input
+        <textarea
           ref={inputRef}
           className="ri"
-          style={{flex:1,padding:"9px 12px",border:"1.5px solid "+border,borderRadius:7,fontSize:14,color:"#1A2B3C",background:bg,outline:"none",fontFamily:"'DM Sans',sans-serif",transition:"border-color .15s,background .15s",boxShadow:isDictating?"0 0 0 3px rgba(251,146,60,.25)":isRec?"0 0 0 3px rgba(220,38,38,.15)":"none"}}
+          rows={3}
+          style={{flex:1,padding:"10px 12px",border:"1.5px solid "+border,borderRadius:7,fontSize:14,color:"#1A2B3C",background:bg,outline:"none",fontFamily:"'DM Sans',sans-serif",transition:"border-color .15s,background .15s",boxShadow:isDictating?"0 0 0 3px rgba(251,146,60,.25)":isRec?"0 0 0 3px rgba(220,38,38,.15)":"none",lineHeight:1.55,resize:"vertical",minHeight:88,overflow:"hidden"}}
           placeholder={isRec ? "🔴 Listening… speak now" : isDictating ? "✏️ Field focused — activate dictation now" : "Type, or click 🎤…"}
           value={val}
-          onChange={function(e){onChange(e.target.value);}}
+          onChange={function(e){
+            e.target.style.height = "auto";
+            e.target.style.height = Math.max(88, e.target.scrollHeight) + "px";
+            onChange(e.target.value);
+          }}
         />
         <MicBtn
           fKey={fKey}
@@ -3244,6 +3346,19 @@ var EMPTY_SHORTCUT_EDITOR = {
   sectionKeywords: "",
   fieldKeywords: ""
 };
+
+function makeEmptyPatient() {
+  return {
+    name: "",
+    age: "",
+    sex: "Male",
+    refBy: "",
+    clinicalInfo: "",
+    studyDate: new Date().toISOString().split("T")[0],
+    reportingDoc: "",
+    institution: ""
+  };
+}
 
 function seedUsers() {
   var defaults = [
@@ -3739,6 +3854,76 @@ function normalizeShortcutCode(v) {
   return String(v || "").toUpperCase().replace(/\s+/g, "").trim();
 }
 
+function tokenizeContext(v) {
+  return String(v || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .map(function(tok) { return tok.trim(); })
+    .filter(function(tok) { return tok.length > 1; });
+}
+
+function countKeywordHits(keywords, tokens) {
+  if (!Array.isArray(keywords) || !keywords.length || !tokens.length) return 0;
+  var normalized = keywords
+    .map(function(keyword) { return tokenizeContext(keyword); })
+    .reduce(function(out, chunk) { return out.concat(chunk); }, []);
+  var seen = {};
+  var hits = 0;
+  tokens.forEach(function(token) {
+    if (seen[token]) return;
+    if (normalized.indexOf(token) !== -1) {
+      hits++;
+      seen[token] = true;
+    }
+  });
+  return hits;
+}
+
+function countTextHits(text, tokens) {
+  if (!tokens.length) return 0;
+  var hay = String(text || "").toLowerCase();
+  var seen = {};
+  var hits = 0;
+  tokens.forEach(function(token) {
+    if (seen[token]) return;
+    if (hay.indexOf(token) !== -1) {
+      hits++;
+      seen[token] = true;
+    }
+  });
+  return hits;
+}
+
+function shortcutContextScore(sc, region, sectionLabel, fieldLabel) {
+  var regionTokens = tokenizeContext(region);
+  var sectionTokens = tokenizeContext(sectionLabel);
+  var fieldTokens = tokenizeContext(fieldLabel);
+  var ruleText = (sc.rules || []).map(function(rule) {
+    return [
+      (rule.any || []).join(" "),
+      (rule.all || []).join(" "),
+      rule.value || ""
+    ].join(" ");
+  }).join(" ");
+  var searchableText = [
+    sc.code,
+    sc.title,
+    sc.fallback,
+    (sc.aliases || []).join(" "),
+    ruleText
+  ].join(" ");
+
+  var score = 0;
+  score += countKeywordHits(sc.regionKeywords, regionTokens) * 8;
+  score += countKeywordHits(sc.sectionKeywords, sectionTokens) * 10;
+  score += countKeywordHits(sc.fieldKeywords, fieldTokens) * 10;
+  score += countTextHits(searchableText, sectionTokens) * 5;
+  score += countTextHits(searchableText, fieldTokens) * 4;
+  score += countTextHits(searchableText, regionTokens) * 3;
+  return score;
+}
+
 function shortcutAppliesToContext(sc, modality, region, sectionLabel, fieldLabel) {
   if (sc.modalities && sc.modalities.length && sc.modalities.indexOf(modality) === -1) return false;
   if (sc.regionKeywords && sc.regionKeywords.length) {
@@ -3776,7 +3961,7 @@ function RadReport() {
   var [step, setStep]               = useState("login");
   var [modality, setModality]       = useState(null);
   var [region, setRegion]           = useState(null);
-  var [patient, setPatient]         = useState({name:"",age:"",sex:"Male",refBy:"",clinicalInfo:"",studyDate:new Date().toISOString().split("T")[0],reportingDoc:"",institution:""});
+  var [patient, setPatient]         = useState(makeEmptyPatient);
   var [findings, setFindings]       = useState({});
   var [tags, setTags]               = useState({});
   var [impression, setImpression]   = useState("");
@@ -3799,6 +3984,7 @@ function RadReport() {
   var [shortcutAdminQuery, setShortcutAdminQuery] = useState("");
   var [shortcutEditor, setShortcutEditor] = useState(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
   var [shortcutBackStep, setShortcutBackStep] = useState("home");
+  var importedTemplateSeedRef = useRef("");
   var printRef = useRef(null);
 
   /* ── helpers ── */
@@ -4062,10 +4248,11 @@ function RadReport() {
   }, [authUser, activeDraftId, patient, modality, region, findings, tags, impression, recommendation, urgency, persistAllDrafts, showToast]);
 
   var loadDraft = useCallback(function(draft) {
+    importedTemplateSeedRef.current = (draft && draft.modality && draft.region) ? (draft.modality + "__" + draft.region) : "";
     setActiveDraftId(draft.id);
     setModality(draft.modality || null);
     setRegion(draft.region || null);
-    setPatient(draft.patient || {name:"",age:"",sex:"Male",refBy:"",clinicalInfo:"",studyDate:new Date().toISOString().split("T")[0],reportingDoc:"",institution:""});
+    setPatient(draft.patient || makeEmptyPatient());
     setFindings(draft.findings || {});
     setTags(draft.tags || {});
     setImpression(draft.impression || "");
@@ -4221,8 +4408,47 @@ function RadReport() {
   var voiceStop     = voice.stop;
   var cancelDictation = voice.cancelDictation;
 
+  var clearReportWorkspace = useCallback(function() {
+    importedTemplateSeedRef.current = "";
+    setPatient(makeEmptyPatient());
+    setFindings({});
+    setTags({});
+    setImpression("");
+    setRec("");
+    setUrgency("Routine");
+    setAiLoad({});
+    setFieldShortcutInput({});
+    setActiveDraftId(null);
+    setFinalizeAudit(null);
+    setFinalizedMeta(null);
+    try { voiceStop(); } catch (e) {}
+  }, [voiceStop]);
+
   var tpl      = modality ? T[modality] : null;
   var sections = (tpl && region && tpl.sections[region]) ? tpl.sections[region] : [];
+  var importedTemplateKey = (modality && region) ? (modality + "__" + region) : "";
+  var currentImportedTemplate = importedTemplateKey ? (IMPORTED_TEMPLATE_MAP[importedTemplateKey] || null) : null;
+
+  useEffect(function() {
+    if (step !== "template" || !currentImportedTemplate || activeDraftId) return;
+    if (importedTemplateSeedRef.current === importedTemplateKey) return;
+    importedTemplateSeedRef.current = importedTemplateKey;
+    var defaults = currentImportedTemplate.defaults || {};
+    setFindings(function(prev) {
+      if (Object.keys(prev).length) return prev;
+      return Object.assign({}, defaults.findings || {});
+    });
+    if (!impression.trim()) setImpression(defaults.impression || "");
+    if (!recommendation.trim()) setRec(defaults.recommendation || "");
+  }, [step, currentImportedTemplate, importedTemplateKey, activeDraftId, impression, recommendation]);
+
+  var beginTemplateSelection = useCallback(function(nextModality, nextRegion) {
+    clearReportWorkspace();
+    setTemplateQuery("");
+    setModality(nextModality || null);
+    setRegion(nextRegion || null);
+    setStep("patient");
+  }, [clearReportWorkspace]);
 
   var getF = function(sl, f){ return findings[sl+"__"+f] || ""; };
   var setF = function(sl, f, v){ setFindings(function(p){ var n = Object.assign({}, p); n[sl+"__"+f] = v; return n; }); };
@@ -4237,8 +4463,11 @@ function RadReport() {
       var bSec = sectionKeywordMatch(b, secLabel) ? 1 : 0;
       var aHit = fieldKeywordMatch(a, fieldLabel) ? 1 : 0;
       var bHit = fieldKeywordMatch(b, fieldLabel) ? 1 : 0;
+      var aScore = shortcutContextScore(a, region, secLabel, fieldLabel);
+      var bScore = shortcutContextScore(b, region, secLabel, fieldLabel);
       if (aSec !== bSec) return bSec - aSec;
       if (aHit !== bHit) return bHit - aHit;
+      if (aScore !== bScore) return bScore - aScore;
       return a.code.localeCompare(b.code);
     });
   }, [allShortcuts, modality, region]);
@@ -4353,15 +4582,12 @@ function RadReport() {
   }, [sections]);
 
   var reset = useCallback(function() {
-    setStep("home"); setModality(null); setRegion(null);
-    setPatient({name:"",age:"",sex:"Male",refBy:"",clinicalInfo:"",studyDate:new Date().toISOString().split("T")[0],reportingDoc:"",institution:""});
-    setFindings({}); setTags({}); setImpression(""); setRec(""); setUrgency("Routine"); setAiLoad({});
-    setFieldShortcutInput({});
-    setActiveDraftId(null);
-    setFinalizeAudit(null);
-    setFinalizedMeta(null);
-    try { voiceStop(); } catch(e) {}
-  }, [voiceStop]);
+    clearReportWorkspace();
+    setTemplateQuery("");
+    setStep("home");
+    setModality(null);
+    setRegion(null);
+  }, [clearReportWorkspace]);
 
   /* ── style constants ── */
   var C = {
@@ -4656,7 +4882,7 @@ function RadReport() {
                   padding:0,
                   animation:"fadeUp .45s ease "+(0.15+idx*0.04)+"s both"
                 }}
-                onClick={function(){ setModality(tplResult.modality); setRegion(tplResult.region); setStep("patient"); }}>
+                onClick={function(){ beginTemplateSelection(tplResult.modality, tplResult.region); }}>
                 <div style={{background:"linear-gradient(135deg,"+tplResult.color+"50 0%,"+tplResult.accent+"35 100%)",padding:"14px 16px",borderBottom:"1px solid "+tplResult.color+"30"}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <span style={{fontSize:20}}>{tplResult.icon}</span>
@@ -4971,7 +5197,7 @@ function RadReport() {
           {regionList.map(function(r) {
             return (
               <div key={r} className="hr" style={{"--hc":C.col,"--hbg":C.col+"08",background:C.sur,borderRadius:10,padding:"20px 16px",border:"2px solid "+C.bdr,textAlign:"center"}}
-                onClick={function(){ setRegion(r); setStep("patient"); }}>
+                onClick={function(){ beginTemplateSelection(modality, r); }}>
                 <div style={{fontWeight:700,fontSize:14,color:C.navy}}>{r}</div>
                 <div style={{fontSize:11,color:C.soft,marginTop:4}}>{(tpl.sections[r]||[]).length} sections</div>
               </div>
