@@ -13,16 +13,7 @@ const mime = {
 createServer(async (req, res) => {
   try {
     const raw = (req.url || '/').split('?')[0];
-    let path = raw === '/' ? '/index.html' : raw;
-    if (path === '/app') path = '/ris.html';
-    if (path === '/ris') path = '/ris.html';
-    if (path === '/templates') path = '/templates.html';
-    if (path === '/billing') path = '/reception.html';
-    if (path === '/admin') path = '/admin.html';
-    if (path === '/records') path = '/records.html';
-    if (path === '/portal') path = '/patient-portal.html';
-    if (/^\/portal\/[^/]+$/.test(path)) path = '/patient-portal.html';
-    if (/^\/report\/[^/]+$/.test(path)) path = '/report.html';
+    const path = raw === '/' ? '/radreport-preview.html' : raw;
     const file = join(root, path);
     const body = await readFile(file);
     res.writeHead(200, { 'Content-Type': mime[extname(file)] || 'application/octet-stream' });
