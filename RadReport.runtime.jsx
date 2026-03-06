@@ -3218,40 +3218,6 @@ function AppHdr({ onBack, backTo, setStep, sub, right }) {
   );
 }
 
-function DoctorSideButton({ count, onClick, dark }) {
-  return (
-    <button
-      type="button"
-      className="np"
-      onClick={onClick}
-      style={{
-        position:"fixed",
-        right:18,
-        top:"50%",
-        transform:"translateY(-50%)",
-        zIndex:40,
-        padding:"12px 10px",
-        width:82,
-        borderRadius:18,
-        border:dark ? "1px solid rgba(255,255,255,.12)" : "1px solid rgba(13,33,55,.12)",
-        background:dark ? "linear-gradient(180deg,rgba(8,20,34,.94),rgba(15,35,58,.94))" : "linear-gradient(180deg,#FFFFFF,#F8FAFC)",
-        color:dark ? "#E2E8F0" : "#0D2137",
-        boxShadow:"0 18px 34px rgba(2,6,23,.18)",
-        display:"flex",
-        flexDirection:"column",
-        alignItems:"center",
-        gap:6,
-        cursor:"pointer",
-        fontFamily:"'DM Sans',sans-serif"
-      }}
-    >
-      <span style={{fontSize:18}}>👨‍⚕️</span>
-      <span style={{fontSize:11,fontWeight:800,letterSpacing:"1.1px",textTransform:"uppercase"}}>Doctors</span>
-      <span style={{fontSize:10,opacity:.68}}>{count} saved</span>
-    </button>
-  );
-}
-
 function DoctorDirectoryDrawer({
   open,
   onClose,
@@ -6303,11 +6269,11 @@ function RadReport() {
 
         <div style={{marginBottom:18,animation:"fadeUp .6s ease .76s both",display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap"}}>
           <div style={{fontSize:12,color:"rgba(255,255,255,.38)"}}>
-            {doctorDirectory.length} doctor{doctorDirectory.length === 1 ? "" : "s"} saved in the side directory.
+            Manage the doctor directory here on the home screen. Doctor selection stays available inside the report flow.
           </div>
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
             <button style={obtn("#fff")} onClick={function(){ openRecords("home"); }}>Record Book</button>
-            <button style={obtn("#38BDF8")} onClick={function(){ openDoctorPanel("list"); }}>Doctor List</button>
+            <button style={obtn("#38BDF8")} onClick={function(){ openDoctorPanel("list"); }}>Doctor Directory</button>
             <button style={btn("linear-gradient(135deg,#0EA5E9,#38BDF8)", "#03111F")} onClick={function(){ openDoctorPanel("add"); }}>+ Add Doctor</button>
           </div>
         </div>
@@ -6465,7 +6431,6 @@ function RadReport() {
         </div>
       </div>
 
-      <DoctorSideButton count={doctorDirectory.length} onClick={function(){ openDoctorPanel("list"); }} dark={true} />
       {doctorDirectoryDrawer}
 
     </div>
@@ -6697,8 +6662,6 @@ function RadReport() {
           <button style={btn(C.col)} disabled={!patient.name} onClick={function(){setStep("template");}}>Continue to Findings →</button>
         </div>
       </div>
-      <DoctorSideButton count={doctorDirectory.length} onClick={function(){ openDoctorPanel("list"); }} />
-      {doctorDirectoryDrawer}
     </div>
   );
 
@@ -6737,11 +6700,7 @@ function RadReport() {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:12}}>
             <div>
               <div style={{fontWeight:800,fontSize:14,color:C.navy}}>Doctors for This Report</div>
-              <div style={{fontSize:11,color:C.soft,marginTop:3}}>Choose who performed the scan and who will finalize the report. Manage the saved directory from the side panel.</div>
-            </div>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              <button style={obtn(C.col)} onClick={function(){ openDoctorPanel("list"); }}>Doctor List</button>
-              <button style={btn(C.col, "#fff")} onClick={function(){ openDoctorPanel("add"); }}>Manage Doctors</button>
+              <div style={{fontSize:11,color:C.soft,marginTop:3}}>Choose who performed the scan and who will finalize the report. Add or delete doctors from the first home page only.</div>
             </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14}}>
@@ -6866,8 +6825,6 @@ function RadReport() {
           <button style={btn(C.col)} onClick={function(){setStep("impression");}}>Next: Impression →</button>
         </div>
       </div>
-      <DoctorSideButton count={doctorDirectory.length} onClick={function(){ openDoctorPanel("list"); }} />
-      {doctorDirectoryDrawer}
     </div>
   );
 
@@ -6905,12 +6862,6 @@ function RadReport() {
                   return <option key={name} value={name}>{name}</option>;
                 })}
               </select>
-            </div>
-            <div style={{display:"flex",alignItems:"flex-end"}}>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                <button style={obtn(C.col)} onClick={function(){ openDoctorPanel("list"); }}>Doctor List</button>
-                <button style={btn(C.col, "#fff")} onClick={function(){ openDoctorPanel("add"); }}>Manage Doctors</button>
-              </div>
             </div>
           </div>
         </div>
@@ -6971,8 +6922,6 @@ function RadReport() {
           <button style={btn(C.col)} onClick={function(){setStep("preview");}}>Generate Report →</button>
         </div>
       </div>
-      <DoctorSideButton count={doctorDirectory.length} onClick={function(){ openDoctorPanel("list"); }} />
-      {doctorDirectoryDrawer}
     </div>
   );
 
