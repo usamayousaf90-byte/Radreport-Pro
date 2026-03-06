@@ -3478,6 +3478,7 @@ var USER_KEY = "rrp_users_v1";
 var SESSION_KEY = "rrp_session_v1";
 var LOCAL_DRAFT_PREFIX = "rrp_local_drafts_";
 var LOCAL_SHORTCUT_PREFIX = "rrp_local_shortcuts_";
+var DOCTOR_DIRECTORY_KEY = "rrp_doctors_v1";
 var EMPTY_SHORTCUT_EDITOR = {
   lookupCode: "",
   code: "",
@@ -3498,6 +3499,7 @@ function makeEmptyPatient() {
     age: "",
     sex: "Male",
     refBy: "",
+    scanDoctor: "",
     clinicalInfo: "",
     studyDate: new Date().toISOString().split("T")[0],
     reportingDoc: "",
@@ -3522,6 +3524,31 @@ function seedUsers() {
 
 function loadUsers() {
   try { return JSON.parse(localStorage.getItem(USER_KEY) || "[]"); } catch (e) { return []; }
+}
+
+function normalizeDoctorName(v) {
+  return String(v || "").replace(/\s+/g, " ").trim();
+}
+
+function loadDoctorDirectory() {
+  try {
+    var doctors = JSON.parse(localStorage.getItem(DOCTOR_DIRECTORY_KEY) || "[]");
+    if (!Array.isArray(doctors)) return [];
+    var seen = {};
+    return doctors.map(normalizeDoctorName).filter(function(name) {
+      if (!name) return false;
+      var key = name.toLowerCase();
+      if (seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveDoctorDirectory(doctors) {
+  try { localStorage.setItem(DOCTOR_DIRECTORY_KEY, JSON.stringify(doctors || [])); } catch (e) {}
 }
 
 function saveLocalDrafts(username, reports) {
@@ -4259,7 +4286,19 @@ function structuredFieldToText(meta, rawValue) {
   }).filter(Boolean).join("\n");
 }
 
-function StructuredFieldInput({ value, onChange, placeholder, width }) {
+function StructuredFieldInput({ value, onChange, placeholder, width, multiline }) {
+  if (multiline) {
+    return (
+      <textarea
+        className="ri"
+        value={value}
+        placeholder={placeholder || ""}
+        rows={2}
+        onChange={function(e){ onChange(e.target.value); }}
+        style={{width:width || 260,minHeight:46,padding:"9px 10px",border:"1.5px solid #CBD5E1",borderRadius:8,fontSize:13,color:"#1A2B3C",background:"#fff",outline:"none",fontFamily:"'DM Sans',sans-serif",lineHeight:1.45,resize:"vertical"}}
+      />
+    );
+  }
   return (
     <input
       className="ri"
@@ -4298,13 +4337,15 @@ function ImportedStructuredField({ fieldLabel, meta, value, onChange }) {
               <div>
                 <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                   {row.inputs.map(function(input, idx) {
+                    var isSentenceCell = row.kind === "three-box" && idx === row.inputs.length - 1;
                     return (
                       <React.Fragment key={idx}>
                         <StructuredFieldInput
                           value={input.value}
                           placeholder={idx === row.inputs.length - 1 && row.note ? row.note : ""}
                           onChange={function(nextValue){ onChange(updateStructuredValue(value || meta.defaultRaw || "", row.rowIndex, input.tokenIndex, nextValue)); }}
-                          width={row.kind === "four-box" ? 120 : 170}
+                          width={row.kind === "four-box" ? 120 : isSentenceCell ? 280 : 170}
+                          multiline={isSentenceCell}
                         />
                         {!!input.suffix && <span style={{fontSize:13,fontWeight:600,color:"#475569",minWidth:36}}>{input.suffix}</span>}
                       </React.Fragment>
@@ -4418,6 +4459,8 @@ function RadReport() {
   var [shortcutAdminQuery, setShortcutAdminQuery] = useState("");
   var [shortcutEditor, setShortcutEditor] = useState(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
   var [shortcutBackStep, setShortcutBackStep] = useState("home");
+  var [doctorNames, setDoctorNames] = useState([]);
+  var [doctorDraft, setDoctorDraft] = useState("");
   var importedTemplateSeedRef = useRef("");
   var printRef = useRef(null);
 
@@ -4435,6 +4478,60 @@ function RadReport() {
   var resetShortcutEditor = useCallback(function() {
     setShortcutEditor(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
   }, []);
+
+  var setPatientField = function(key, value) {
+    setPatient(function(prev) {
+      var next = Object.assign({}, prev);
+      next[key] = value;
+      return next;
+    });
+  };
+
+  var persistDoctorNames = useCallback(function(nextDoctors) {
+    setDoctorNames(nextDoctors);
+    saveDoctorDirectory(nextDoctors);
+  }, []);
+
+  var addDoctorName = useCallback(function(rawName, quiet) {
+    var name = normalizeDoctorName(rawName);
+    if (!name) {
+      if (!quiet) showToast("Enter a doctor name first", "error");
+      return "";
+    }
+    var existing = "";
+    doctorNames.some(function(item) {
+      if (item.toLowerCase() === name.toLowerCase()) {
+        existing = item;
+        return true;
+      }
+      return false;
+    });
+    if (existing) {
+      if (!quiet) showToast(existing + " is already in the doctor list", "info");
+      return existing;
+    }
+    var nextDoctors = doctorNames.concat(name).sort(function(a, b) {
+      return a.localeCompare(b);
+    });
+    persistDoctorNames(nextDoctors);
+    setDoctorDraft("");
+    if (!quiet) showToast("Doctor added: " + name, "success");
+    return name;
+  }, [doctorNames, persistDoctorNames, showToast]);
+
+  var promptAddDoctor = useCallback(function(targetField) {
+    var entered = window.prompt("Doctor name", "");
+    if (entered == null) return;
+    var savedName = addDoctorName(entered);
+    if (savedName && targetField) setPatientField(targetField, savedName);
+  }, [addDoctorName]);
+
+  var removeDoctorName = useCallback(function(name) {
+    var key = String(name || "").toLowerCase();
+    var nextDoctors = doctorNames.filter(function(item) { return item.toLowerCase() !== key; });
+    persistDoctorNames(nextDoctors);
+    showToast("Removed doctor: " + name, "info");
+  }, [doctorNames, persistDoctorNames, showToast]);
 
   var customShortcutCodeSet = new Set(customShortcuts.map(function(sc) { return normalizeShortcutCode(sc.code); }));
   var allShortcuts = (function() {
@@ -4686,7 +4783,7 @@ function RadReport() {
     setActiveDraftId(draft.id);
     setModality(draft.modality || null);
     setRegion(draft.region || null);
-    setPatient(draft.patient || makeEmptyPatient());
+    setPatient(Object.assign(makeEmptyPatient(), draft.patient || {}));
     setFindings(draft.findings || {});
     setTags(draft.tags || {});
     setImpression(draft.impression || "");
@@ -4812,6 +4909,7 @@ function RadReport() {
     seedUsers();
     var all = loadUsers();
     setUsers(all);
+    setDoctorNames(loadDoctorDirectory());
     try {
       var s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
       if (s && s.username && s.role) {
@@ -5347,6 +5445,49 @@ function RadReport() {
           <input className="ri" style={Object.assign({}, inp({background:"rgba(255,255,255,.08)",color:"#fff",border:"1px solid rgba(255,255,255,.15)"}), {maxWidth:420})} placeholder="Search templates, regions, modalities…" value={templateQuery} onChange={function(e){setTemplateQuery(e.target.value);}} />
         </div>
 
+        <div style={{marginBottom:18,animation:"fadeUp .6s ease .76s both",borderRadius:18,background:"linear-gradient(160deg,rgba(255,255,255,.06) 0%,rgba(255,255,255,.02) 100%)",border:"1px solid rgba(255,255,255,.09)",backdropFilter:"blur(16px)",padding:"18px 20px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap",marginBottom:12}}>
+            <div>
+              <div style={{fontSize:11,color:"#38BDF8",fontWeight:800,letterSpacing:"2px",textTransform:"uppercase"}}>Doctor Directory</div>
+              <div style={{fontSize:13,color:"rgba(255,255,255,.45)",marginTop:4}}>Add doctors here once, then select them later for scan performer and finalizing doctor.</div>
+            </div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,.38)"}}>{doctorNames.length} saved</div>
+          </div>
+          <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+            <input
+              className="ri"
+              style={Object.assign({}, inp({background:"rgba(255,255,255,.08)",color:"#fff",border:"1px solid rgba(255,255,255,.15)"}), {maxWidth:360})}
+              placeholder="Add doctor name"
+              value={doctorDraft}
+              onChange={function(e){ setDoctorDraft(e.target.value); }}
+              onKeyDown={function(e){
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                addDoctorName(doctorDraft);
+              }}
+            />
+            <button style={btn("linear-gradient(135deg,#0EA5E9,#38BDF8)", "#03111F")} onClick={function(){ addDoctorName(doctorDraft); }}>+ Add Doctor</button>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {doctorNames.length ? doctorNames.map(function(name) {
+              return (
+                <div key={name} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 11px",borderRadius:18,background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.09)"}}>
+                  <span style={{fontSize:12,color:"#fff",fontWeight:600}}>{name}</span>
+                  <button
+                    type="button"
+                    onClick={function(){ removeDoctorName(name); }}
+                    style={{border:"none",background:"transparent",color:"rgba(255,255,255,.45)",cursor:"pointer",fontSize:12,fontWeight:800,padding:0}}
+                  >
+                    x
+                  </button>
+                </div>
+              );
+            }) : (
+              <div style={{fontSize:12,color:"rgba(255,255,255,.35)"}}>No saved doctors yet. Add them here before you start reporting.</div>
+            )}
+          </div>
+        </div>
+
         {/* 4-column card grid */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:14}}>
           {q ? templateEntries.map(function(tplResult, idx) {
@@ -5709,7 +5850,15 @@ function RadReport() {
             </div>
             <div><label style={lbl}>Study Date</label><input className="ri" type="date" style={inp()} value={patient.studyDate} onChange={function(e){setPatient(function(p){return Object.assign({},p,{studyDate:e.target.value});});}} /></div>
             <div><label style={lbl}>Referred By</label><input className="ri" style={inp()} placeholder="Dr. Name / Dept" value={patient.refBy} onChange={function(e){setPatient(function(p){return Object.assign({},p,{refBy:e.target.value});});}} /></div>
-            <div><label style={lbl}>Reporting Doctor</label><input className="ri" style={inp()} placeholder="Radiologist name" value={patient.reportingDoc} onChange={function(e){setPatient(function(p){return Object.assign({},p,{reportingDoc:e.target.value});});}} /></div>
+            <div>
+              <label style={lbl}>Scan Performed By</label>
+              <select className="ri" style={inp({cursor:"pointer"})} value={patient.scanDoctor || ""} onChange={function(e){ setPatientField("scanDoctor", e.target.value); }}>
+                <option value="">Select doctor</option>
+                {((patient.scanDoctor && doctorNames.indexOf(patient.scanDoctor) === -1) ? [patient.scanDoctor].concat(doctorNames) : doctorNames).map(function(name) {
+                  return <option key={name} value={name}>{name}</option>;
+                })}
+              </select>
+            </div>
             <div><label style={lbl}>Institution</label><input className="ri" style={inp()} placeholder="Hospital / Clinic" value={patient.institution} onChange={function(e){setPatient(function(p){return Object.assign({},p,{institution:e.target.value});});}} /></div>
             <div style={{gridColumn:"1/-1"}}><label style={lbl}>Clinical History / Indication</label>
               <textarea className="ri" style={ta({minHeight:60})} placeholder="e.g. Pain RUQ, rule out cholelithiasis…" value={patient.clinicalInfo} onChange={function(e){setPatient(function(p){return Object.assign({},p,{clinicalInfo:e.target.value});});}} />
@@ -5751,6 +5900,36 @@ function RadReport() {
             </div>
           </div>
           <button onClick={markAllNormal} style={Object.assign(obtn(C.ok),{padding:"7px 14px",fontSize:12,whiteSpace:"nowrap"})}>✓ Mark All Normal</button>
+        </div>
+
+        <div style={{marginBottom:16,padding:"16px 18px",background:"#FFFFFF",borderRadius:12,border:"1px solid "+C.bdr}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:12}}>
+            <div>
+              <div style={{fontWeight:800,fontSize:14,color:C.navy}}>Doctors for This Report</div>
+              <div style={{fontSize:11,color:C.soft,marginTop:3}}>Choose who performed the scan and who will finalize the report.</div>
+            </div>
+            <button style={obtn(C.col)} onClick={function(){ promptAddDoctor(); }}>+ Add Doctor</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14}}>
+            <div>
+              <label style={lbl}>Scan Performed By</label>
+              <select className="ri" style={inp({cursor:"pointer"})} value={patient.scanDoctor || ""} onChange={function(e){ setPatientField("scanDoctor", e.target.value); }}>
+                <option value="">Select doctor</option>
+                {((patient.scanDoctor && doctorNames.indexOf(patient.scanDoctor) === -1) ? [patient.scanDoctor].concat(doctorNames) : doctorNames).map(function(name) {
+                  return <option key={name} value={name}>{name}</option>;
+                })}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Reporting / Finalizing Doctor</label>
+              <select className="ri" style={inp({cursor:"pointer"})} value={patient.reportingDoc || ""} onChange={function(e){ setPatientField("reportingDoc", e.target.value); }}>
+                <option value="">Select doctor</option>
+                {((patient.reportingDoc && doctorNames.indexOf(patient.reportingDoc) === -1) ? [patient.reportingDoc].concat(doctorNames) : doctorNames).map(function(name) {
+                  return <option key={name} value={name}>{name}</option>;
+                })}
+              </select>
+            </div>
+          </div>
         </div>
 
         {/* recording indicator */}
@@ -5864,6 +6043,32 @@ function RadReport() {
         </div>}
       />
       <div style={pg}>
+        <div style={crd}>
+          <div style={cHd("#0EA5E9")}><span style={{fontSize:20}}>👨‍⚕️</span><b style={{color:C.navy,fontSize:15}}>Doctor Selection</b></div>
+          <div style={{padding:20,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
+            <div>
+              <label style={lbl}>Scan Performed By</label>
+              <select className="ri" style={inp({cursor:"pointer"})} value={patient.scanDoctor || ""} onChange={function(e){ setPatientField("scanDoctor", e.target.value); }}>
+                <option value="">Select doctor</option>
+                {((patient.scanDoctor && doctorNames.indexOf(patient.scanDoctor) === -1) ? [patient.scanDoctor].concat(doctorNames) : doctorNames).map(function(name) {
+                  return <option key={name} value={name}>{name}</option>;
+                })}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Finalizing Reporting Doctor</label>
+              <select className="ri" style={inp({cursor:"pointer"})} value={patient.reportingDoc || ""} onChange={function(e){ setPatientField("reportingDoc", e.target.value); }}>
+                <option value="">Select doctor</option>
+                {((patient.reportingDoc && doctorNames.indexOf(patient.reportingDoc) === -1) ? [patient.reportingDoc].concat(doctorNames) : doctorNames).map(function(name) {
+                  return <option key={name} value={name}>{name}</option>;
+                })}
+              </select>
+            </div>
+            <div style={{display:"flex",alignItems:"flex-end"}}>
+              <button style={obtn(C.col)} onClick={function(){ promptAddDoctor(); }}>+ Add Doctor to List</button>
+            </div>
+          </div>
+        </div>
         <div style={crd}>
           <div style={cHd(C.col)}><span style={{fontSize:20}}>📋</span><b style={{color:C.navy,fontSize:15}}>Impression / Conclusion</b></div>
           <div style={{padding:20}}>
@@ -6066,8 +6271,8 @@ function RadReport() {
                 <div style={{marginTop:8,padding:"4px 14px",borderRadius:20,fontSize:11,fontWeight:800,background:urgency==="Routine"?C.ok:urgency==="Urgent"?C.warn:C.err,color:"#fff"}}>{urgency.toUpperCase()}</div>
               </div>
             </div>
-            <div style={{padding:"14px 32px",background:"#F8FAFC",borderBottom:"1px solid "+C.bdr,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14}}>
-              {[["Patient",patient.name],["Age / Sex",patient.age+" / "+patient.sex],["Referred By",patient.refBy||"—"],["Reporting Doctor",patient.reportingDoc||"—"]].map(function(x){return(
+            <div style={{padding:"14px 32px",background:"#F8FAFC",borderBottom:"1px solid "+C.bdr,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:14}}>
+              {[["Patient",patient.name],["Age / Sex",patient.age+" / "+patient.sex],["Referred By",patient.refBy||"—"],["Scan Performed By",patient.scanDoctor||"—"],["Reporting Doctor",patient.reportingDoc||"—"]].map(function(x){return(
                 <div key={x[0]}><div style={{fontSize:10,fontWeight:700,color:C.soft,textTransform:"uppercase",letterSpacing:.8}}>{x[0]}</div><div style={{fontSize:14,fontWeight:600,color:C.navy,marginTop:2}}>{x[1]||"—"}</div></div>
               );})}
             </div>
@@ -6152,7 +6357,7 @@ function RadReport() {
             <div style={{textAlign:"right"}}>
               <div style={{width:180,borderBottom:"2px solid "+C.navy,marginBottom:6}} />
               <div style={{fontSize:13,fontWeight:700,color:C.navy}}>{patient.reportingDoc||"Reporting Physician"}</div>
-              <div style={{fontSize:11,color:C.soft}}>{modality} Reporting</div>
+              <div style={{fontSize:11,color:C.soft}}>{patient.scanDoctor ? ("Scan by " + patient.scanDoctor + " · ") : ""}{modality} Reporting</div>
             </div>
           </div>
         </div>
