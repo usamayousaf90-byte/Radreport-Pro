@@ -2905,6 +2905,7 @@ var IMPORTED_TEMPLATE_MAP = (function() {
       code: String(rawTpl.code || "").trim(),
       test: String(rawTpl.test || region).trim(),
       sections: sections,
+      fieldMeta: Object.assign({}, rawTpl.fieldMeta || {}),
       defaults: {
         findings: findingDefaults,
         impression: String(rawDefaults.impression || ""),
@@ -3924,6 +3925,254 @@ function shortcutContextScore(sc, region, sectionLabel, fieldLabel) {
   return score;
 }
 
+var STRUCTURED_CONTROL_TYPE_MAP = {
+  3: true, 4: true, 5: true, 6: true, 7: true, 9: true, 10: true, 11: true, 12: true,
+  13: true, 14: true, 20: true, 21: true, 22: true, 23: true, 24: true, 25: true
+};
+
+function isStructuredControlType(controlType) {
+  return !!STRUCTURED_CONTROL_TYPE_MAP[Number(controlType)];
+}
+
+function cleanStructuredToken(token) {
+  var value = String(token == null ? "" : token).trim();
+  if (!value || value.toLowerCase() === "undefined") return "";
+  return value;
+}
+
+function parseStructuredRows(rawValue) {
+  return String(rawValue == null ? "" : rawValue).split("|").map(function(row) {
+    return row.split("•");
+  });
+}
+
+function serializeStructuredRows(rows) {
+  return rows.map(function(row) {
+    return row.map(function(cell) { return String(cell == null ? "" : cell); }).join("•");
+  }).join("|");
+}
+
+function getCrlVisibleCount(controlType) {
+  var type = Number(controlType);
+  if (type === 14) return 4;
+  if (type === 13) return 3;
+  if (type === 7) return 2;
+  return 1;
+}
+
+function parseStructuredField(meta, rawValue) {
+  var type = Number(meta && meta.controlType);
+  var sourceValue = String(rawValue == null ? "" : rawValue);
+  if (sourceValue.indexOf("•") === -1 && meta && String(meta.defaultRaw || "").indexOf("•") !== -1) {
+    sourceValue = String(meta.defaultRaw || "");
+  }
+  var rows = parseStructuredRows(sourceValue);
+  var parsedRows = [];
+
+  rows.forEach(function(tokens, rowIndex) {
+    if (type === 3 || type === 4 || type === 5 || type === 20) {
+      var headerTexts = [tokens[1], tokens[5], tokens[9], tokens[13]].map(cleanStructuredToken).filter(Boolean);
+      if (!cleanStructuredToken(tokens[0])) {
+        if (headerTexts.length) {
+          parsedRows.push({ kind: "header-cards", rowIndex: rowIndex, tokens: tokens, texts: headerTexts });
+        }
+        return;
+      }
+      parsedRows.push({
+        kind: "three-box",
+        rowIndex: rowIndex,
+        tokens: tokens,
+        label: cleanStructuredToken(tokens[0]),
+        inputs: [
+          { tokenIndex: 1, value: cleanStructuredToken(tokens[1]), suffix: cleanStructuredToken(tokens[2]) },
+          { tokenIndex: 3, value: cleanStructuredToken(tokens[3]), suffix: cleanStructuredToken(tokens[4]) },
+          { tokenIndex: 5, value: cleanStructuredToken(tokens[5]), suffix: "" }
+        ],
+        note: cleanStructuredToken(tokens[17])
+      });
+      return;
+    }
+
+    if (type === 6 || type === 7 || type === 13 || type === 14) {
+      var tokenPairs = [
+        { valueIndex: 1, suffixIndex: 2 },
+        { valueIndex: 3, suffixIndex: 4 },
+        { valueIndex: 5, suffixIndex: 6 },
+        { valueIndex: 7, suffixIndex: 8 }
+      ];
+      parsedRows.push({
+        kind: "crl-grid",
+        rowIndex: rowIndex,
+        tokens: tokens,
+        label: cleanStructuredToken(tokens[0]),
+        inputs: tokenPairs.slice(0, getCrlVisibleCount(type)).map(function(pair) {
+          return {
+            tokenIndex: pair.valueIndex,
+            value: cleanStructuredToken(tokens[pair.valueIndex]),
+            suffix: cleanStructuredToken(tokens[pair.suffixIndex])
+          };
+        })
+      });
+      return;
+    }
+
+    if (type === 9 || type === 10 || type === 11 || type === 12 || type === 21 || type === 22 || type === 23 || type === 24 || type === 25) {
+      parsedRows.push({
+        kind: "four-box",
+        rowIndex: rowIndex,
+        tokens: tokens,
+        label: cleanStructuredToken(tokens[0]),
+        inputs: [1, 2, 3, 4].map(function(tokenIndex) {
+          return { tokenIndex: tokenIndex, value: cleanStructuredToken(tokens[tokenIndex]), suffix: "" };
+        }),
+        note: cleanStructuredToken(tokens[5])
+      });
+    }
+  });
+
+  return { type: type, rows: parsedRows };
+}
+
+function updateStructuredValue(rawValue, rowIndex, tokenIndex, nextValue) {
+  var rows = parseStructuredRows(rawValue);
+  if (!rows[rowIndex]) rows[rowIndex] = [];
+  rows[rowIndex][tokenIndex] = nextValue;
+  return serializeStructuredRows(rows);
+}
+
+function structuredFieldHasContent(meta, rawValue) {
+  if (!meta || !isStructuredControlType(meta.controlType)) return !!String(rawValue || "").trim();
+  var type = Number(meta.controlType);
+  var rows = parseStructuredField(meta, rawValue).rows;
+  return rows.some(function(row) {
+    if (row.kind === "header-cards") return row.texts.some(Boolean);
+    return row.inputs.some(function(input) {
+      var value = cleanStructuredToken(input.value);
+      if (!value) return false;
+      if ((type === 9 || type === 10 || type === 11 || type === 12) && value === "0") return false;
+      return true;
+    }) || !!cleanStructuredToken(row.note);
+  });
+}
+
+function structuredFieldToText(meta, rawValue) {
+  if (!meta || !isStructuredControlType(meta.controlType)) return String(rawValue || "");
+  return parseStructuredField(meta, rawValue).rows.map(function(row) {
+    if (row.kind === "header-cards") return row.texts.join(" | ");
+    var parts = row.inputs.map(function(input) {
+      var value = cleanStructuredToken(input.value);
+      var suffix = cleanStructuredToken(input.suffix);
+      if (!value) return "";
+      return value + (suffix ? " " + suffix : "");
+    }).filter(Boolean);
+    var line = row.label ? (row.label + ": ") : "";
+    line += parts.join(" | ");
+    if (cleanStructuredToken(row.note)) {
+      line += (parts.length ? " | " : "") + cleanStructuredToken(row.note);
+    }
+    return line.trim();
+  }).filter(Boolean).join("\n");
+}
+
+function StructuredFieldInput({ value, onChange, placeholder, width }) {
+  return (
+    <input
+      className="ri"
+      value={value}
+      placeholder={placeholder || ""}
+      onChange={function(e){ onChange(e.target.value); }}
+      style={{width:width || 156,padding:"9px 10px",border:"1.5px solid #CBD5E1",borderRadius:8,fontSize:13,color:"#1A2B3C",background:"#fff",outline:"none",fontFamily:"'DM Sans',sans-serif"}}
+    />
+  );
+}
+
+function ImportedStructuredField({ fieldLabel, meta, value, onChange }) {
+  var parsed = parseStructuredField(meta, value || (meta && meta.defaultRaw) || "");
+  return (
+    <div style={{marginBottom:18}}>
+      <div style={{fontSize:11,fontWeight:700,color:"#5A7090",textTransform:"uppercase",letterSpacing:.9,marginBottom:8}}>{fieldLabel}</div>
+      <div style={{border:"1px solid #DDE5EF",borderRadius:12,background:"#F8FBFF",padding:16}}>
+        {parsed.rows.map(function(row, rowIdx) {
+          if (row.kind === "header-cards") {
+            return (
+              <div key={rowIdx} style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:10,marginBottom:14}}>
+                {row.texts.map(function(text, idx) {
+                  return (
+                    <div key={idx} style={{padding:"10px 12px",borderRadius:10,background:"#EFF6FF",border:"1px solid #BFDBFE",color:"#1E3A8A",fontSize:12,lineHeight:1.5,whiteSpace:"pre-wrap",fontWeight:600}}>
+                      {text}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          }
+
+          return (
+            <div key={rowIdx} style={{display:"grid",gridTemplateColumns:"minmax(150px,220px) 1fr",gap:14,alignItems:"center",padding:"10px 0",borderTop:rowIdx?"1px solid #E2E8F0":"none"}}>
+              <div style={{fontSize:13,fontWeight:700,color:"#334155"}}>{row.label}</div>
+              <div>
+                <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                  {row.inputs.map(function(input, idx) {
+                    return (
+                      <React.Fragment key={idx}>
+                        <StructuredFieldInput
+                          value={input.value}
+                          placeholder={idx === row.inputs.length - 1 && row.note ? row.note : ""}
+                          onChange={function(nextValue){ onChange(updateStructuredValue(value || meta.defaultRaw || "", row.rowIndex, input.tokenIndex, nextValue)); }}
+                          width={row.kind === "four-box" ? 120 : 170}
+                        />
+                        {!!input.suffix && <span style={{fontSize:13,fontWeight:600,color:"#475569",minWidth:36}}>{input.suffix}</span>}
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+                {!!row.note && row.kind !== "three-box" && (
+                  <div style={{marginTop:6,fontSize:11,color:"#64748B"}}>{row.note}</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ImportedStructuredPreview({ meta, value }) {
+  var parsed = parseStructuredField(meta, value || (meta && meta.defaultRaw) || "");
+  return (
+    <div style={{display:"grid",gap:10}}>
+      {parsed.rows.map(function(row, idx) {
+        if (row.kind === "header-cards") {
+          return (
+            <div key={idx} style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+              {row.texts.map(function(text, textIdx) {
+                return <div key={textIdx} style={{padding:"8px 10px",border:"1px solid #BFDBFE",borderRadius:8,background:"#F8FBFF",whiteSpace:"pre-wrap",fontSize:12,color:"#1E3A8A"}}>{text}</div>;
+              })}
+            </div>
+          );
+        }
+        return (
+          <div key={idx} style={{display:"grid",gridTemplateColumns:"200px 1fr",gap:12,alignItems:"start"}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#475569"}}>{row.label}</div>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              {row.inputs.map(function(input, inputIdx) {
+                return (
+                  <React.Fragment key={inputIdx}>
+                    <div style={{minWidth:100,padding:"8px 10px",border:"1px solid #CBD5E1",borderRadius:8,background:"#fff",fontSize:12,color:"#0F172A"}}>{input.value || "—"}</div>
+                    {!!input.suffix && <span style={{fontSize:12,color:"#64748B",fontWeight:600}}>{input.suffix}</span>}
+                  </React.Fragment>
+                );
+              })}
+              {!!row.note && <span style={{fontSize:12,color:"#64748B"}}>{row.note}</span>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function shortcutAppliesToContext(sc, modality, region, sectionLabel, fieldLabel) {
   if (sc.modalities && sc.modalities.length && sc.modalities.indexOf(modality) === -1) return false;
   if (sc.regionKeywords && sc.regionKeywords.length) {
@@ -4036,9 +4285,9 @@ function RadReport() {
     sections.forEach(function(sec) {
       sec.fields.forEach(function(field) {
         var key = sec.label + "__" + field;
-        var v = findings[key] || "";
+        var v = getFieldText(sec.label, field);
         var t = tags[key] || null;
-        allRows.push({ key: key, sec: sec.label, field: field, val: v.trim(), tag: t });
+        allRows.push({ key: key, sec: sec.label, field: field, val: v.trim(), tag: t, hasContent: fieldHasContent(sec.label, field) });
       });
     });
 
@@ -4051,7 +4300,7 @@ function RadReport() {
       score -= 25;
     }
 
-    var filledRows = allRows.filter(function(r) { return !!r.val; });
+    var filledRows = allRows.filter(function(r) { return r.hasContent; });
     var missingCount = allRows.length - filledRows.length;
     if (missingCount > 0) {
       warnings.push(missingCount + " findings field(s) left empty.");
@@ -4428,6 +4677,7 @@ function RadReport() {
   var sections = (tpl && region && tpl.sections[region]) ? tpl.sections[region] : [];
   var importedTemplateKey = (modality && region) ? (modality + "__" + region) : "";
   var currentImportedTemplate = importedTemplateKey ? (IMPORTED_TEMPLATE_MAP[importedTemplateKey] || null) : null;
+  var importedFieldMeta = currentImportedTemplate && currentImportedTemplate.fieldMeta ? currentImportedTemplate.fieldMeta : {};
 
   useEffect(function() {
     if (step !== "template" || !currentImportedTemplate || activeDraftId) return;
@@ -4450,8 +4700,21 @@ function RadReport() {
     setStep("patient");
   }, [clearReportWorkspace]);
 
+  var getFieldMeta = function(sl, f) {
+    return importedFieldMeta[sl + "__" + f] || null;
+  };
   var getF = function(sl, f){ return findings[sl+"__"+f] || ""; };
   var setF = function(sl, f, v){ setFindings(function(p){ var n = Object.assign({}, p); n[sl+"__"+f] = v; return n; }); };
+  var getFieldText = function(sl, f) {
+    var raw = getF(sl, f);
+    var meta = getFieldMeta(sl, f);
+    return meta && isStructuredControlType(meta.controlType) ? structuredFieldToText(meta, raw) : raw;
+  };
+  var fieldHasContent = function(sl, f) {
+    var raw = getF(sl, f);
+    var meta = getFieldMeta(sl, f);
+    return meta && isStructuredControlType(meta.controlType) ? structuredFieldHasContent(meta, raw) : !!String(raw || "").trim();
+  };
   var getT = function(sl, f){ return tags[sl+"__"+f]; };
   var togT = function(sl, f, t){ setTags(function(p){ var n = Object.assign({}, p); n[sl+"__"+f] = p[sl+"__"+f] === t ? null : t; return n; }); };
   var setLD = function(k, v){ setAiLoad(function(p){ var n = Object.assign({}, p); n[k] = v; return n; }); };
@@ -4511,7 +4774,12 @@ function RadReport() {
   }, [allShortcuts, modality, region, showToast]);
 
   var expandField = useCallback(async function(sl, field) {
-    var cur = getF(sl, field).trim();
+    var meta = getFieldMeta(sl, field);
+    if (meta && isStructuredControlType(meta.controlType)) {
+      showToast("AI sentence expansion is disabled for structured measurement grids", "info");
+      return;
+    }
+    var cur = getFieldText(sl, field).trim();
     if (!cur) { showToast("Type or speak in \"" + field + "\" first", "error"); return; }
     var k = sl + "__" + field;
     setLD(k, true);
@@ -4524,10 +4792,10 @@ function RadReport() {
       showToast(r.offline ? "⚠️ Online AI unavailable, used offline draft" : "✨ Expanded", r.offline ? "info" : "success");
     } else showToast("AI error: " + r.error, "error");
     setLD(k, false);
-  }, [modality, region, findings, showToast]);
+  }, [modality, region, findings, showToast, importedFieldMeta]);
 
   var expandSection = useCallback(async function(sec) {
-    var filled = sec.fields.map(function(f){ return [f, getF(sec.label, f).trim()]; }).filter(function(x){ return x[1]; });
+    var filled = sec.fields.map(function(f){ return [f, getFieldText(sec.label, f).trim()]; }).filter(function(x){ return x[1]; });
     if (!filled.length) { showToast("Add findings to \"" + sec.label + "\" first", "error"); return; }
     var k = "sec__" + sec.label;
     setLD(k, true);
@@ -4544,10 +4812,14 @@ function RadReport() {
       } catch(e) { showToast("AI format error. Try individual fields.", "error"); }
     } else showToast("AI error: " + r.error, "error");
     setLD(k, false);
-  }, [modality, region, findings, showToast]);
+  }, [modality, region, findings, showToast, importedFieldMeta]);
 
   var generateImpression = useCallback(async function() {
-    var all = sections.flatMap(function(sec){ return sec.fields.map(function(f){ return {sec:sec.label,f:f,v:findings[sec.label+"__"+f]||"",t:tags[sec.label+"__"+f]}; }).filter(function(x){ return x.v; }); });
+    var all = sections.flatMap(function(sec){
+      return sec.fields.map(function(f){
+        return {sec:sec.label,f:f,v:getFieldText(sec.label, f) || "",t:tags[sec.label+"__"+f]};
+      }).filter(function(x){ return x.v.trim(); });
+    });
     if (!all.length) { showToast("Add findings first", "error"); return; }
     setLD("impression", true);
     var r = await aiCall(
@@ -4559,7 +4831,7 @@ function RadReport() {
       showToast(r.offline ? "⚠️ Online AI unavailable, generated offline impression draft" : "✨ Impression generated", r.offline ? "info" : "success");
     } else showToast("AI error: " + r.error, "error");
     setLD("impression", false);
-  }, [sections, findings, tags, modality, region, patient, showToast]);
+  }, [sections, findings, tags, modality, region, patient, showToast, importedFieldMeta]);
 
   var expandImpression = useCallback(async function() {
     if (!impression.trim()) { showToast("Type a draft first", "error"); return; }
@@ -4577,9 +4849,16 @@ function RadReport() {
 
   var markAllNormal = useCallback(function() {
     var f = {}, t = {};
-    sections.forEach(function(sec){ sec.fields.forEach(function(fl){ f[sec.label+"__"+fl] = "within normal limits"; t[sec.label+"__"+fl] = "n"; }); });
+    sections.forEach(function(sec){
+      sec.fields.forEach(function(fl){
+        var meta = getFieldMeta(sec.label, fl);
+        if (meta && isStructuredControlType(meta.controlType)) return;
+        f[sec.label+"__"+fl] = "within normal limits";
+        t[sec.label+"__"+fl] = "n";
+      });
+    });
     setFindings(f); setTags(t);
-  }, [sections]);
+  }, [sections, importedFieldMeta]);
 
   var reset = useCallback(function() {
     clearReportWorkspace();
@@ -5297,15 +5576,32 @@ function RadReport() {
                 <span style={{fontSize:11,color:C.soft}}>Expand All</span>
                 <button onClick={function(){
                   var f = Object.assign({}, findings), t = Object.assign({}, tags);
-                  sec.fields.forEach(function(fl){ f[sec.label+"__"+fl]="within normal limits"; t[sec.label+"__"+fl]="n"; });
+                  sec.fields.forEach(function(fl){
+                    var meta = getFieldMeta(sec.label, fl);
+                    if (meta && isStructuredControlType(meta.controlType)) return;
+                    f[sec.label+"__"+fl]="within normal limits";
+                    t[sec.label+"__"+fl]="n";
+                  });
                   setFindings(f); setTags(t);
                 }} style={{padding:"4px 10px",borderRadius:20,fontSize:11,fontWeight:700,cursor:"pointer",border:"none",background:C.bdr,color:C.soft}}>✓ All Normal</button>
               </div>
               <div style={{padding:20}}>
                 {sec.fields.map(function(field) {
                   var k = sec.label+"__"+field;
+                  var meta = getFieldMeta(sec.label, field);
                   var fieldShortcuts = getFieldShortcuts(sec.label, field);
                   var currentShortcut = fieldShortcutInput[k] || "";
+                  if (meta && isStructuredControlType(meta.controlType)) {
+                    return (
+                      <ImportedStructuredField
+                        key={field}
+                        fieldLabel={meta.paramName || field}
+                        meta={meta}
+                        value={getF(sec.label, field)}
+                        onChange={function(v){ setF(sec.label, field, v); }}
+                      />
+                    );
+                  }
                   return (
                     <FindingField
                       key={field}
@@ -5586,7 +5882,11 @@ function RadReport() {
             <div style={Object.assign(cHd(C.col),{background:"linear-gradient(90deg,"+C.col+"18,transparent)"})}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Findings</span></div>
             <div style={{padding:"20px 32px"}}>
               {sections.map(function(sec){
-                var rows = sec.fields.filter(function(f){ return getF(sec.label,f)||getT(sec.label,f); });
+                var rows = sec.fields.filter(function(f){
+                  var meta = getFieldMeta(sec.label, f);
+                  if (meta && isStructuredControlType(meta.controlType)) return true;
+                  return fieldHasContent(sec.label, f) || getT(sec.label, f);
+                });
                 if (!rows.length) return null;
                 return (
                   <div key={sec.label} style={{marginBottom:20}}>
@@ -5597,12 +5897,24 @@ function RadReport() {
                     </div>
                     <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>
                       {sec.fields.map(function(field){
-                        var v = getF(sec.label,field), t = getT(sec.label,field);
-                        if (!v && !t) return null;
+                        var meta = getFieldMeta(sec.label, field);
+                        var t = getT(sec.label,field);
+                        if (meta && isStructuredControlType(meta.controlType)) {
+                          return (
+                            <tr key={field} style={{borderBottom:"1px solid "+C.bdr}}>
+                              <td style={{padding:"10px 0",fontSize:13,fontWeight:600,color:C.soft,width:200,verticalAlign:"top"}}>{meta.paramName || field}</td>
+                              <td style={{padding:"10px 12px",verticalAlign:"top"}}>
+                                <ImportedStructuredPreview meta={meta} value={getF(sec.label, field)} />
+                              </td>
+                              <td style={{padding:"10px 0"}} />
+                            </tr>
+                          );
+                        }
+                        if (!fieldHasContent(sec.label, field) && !t) return null;
                         return (
                           <tr key={field} style={{borderBottom:"1px solid "+C.bdr}}>
                             <td style={{padding:"7px 0",fontSize:13,fontWeight:600,color:C.soft,width:200,verticalAlign:"top"}}>{field}</td>
-                            <td style={{padding:"7px 12px",fontSize:13,color:t==="ab"?C.err:C.txt,fontWeight:t==="ab"?600:400,verticalAlign:"top"}}>{v||"—"}</td>
+                            <td style={{padding:"7px 12px",fontSize:13,color:t==="ab"?C.err:C.txt,fontWeight:t==="ab"?600:400,verticalAlign:"top"}}>{getFieldText(sec.label, field)||"—"}</td>
                             <td style={{padding:"7px 0",textAlign:"right",verticalAlign:"top"}}>
                               {t && <span style={{fontSize:10,padding:"2px 8px",borderRadius:20,fontWeight:700,background:t==="n"?"#E8F8F2":"#FEECEC",color:t==="n"?C.ok:C.err,border:"1px solid "+(t==="n"?"#A8E6CF":"#FFACAC")}}>{t==="n"?"NORMAL":"ABNORMAL"}</span>}
                             </td>
