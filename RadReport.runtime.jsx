@@ -3768,6 +3768,7 @@ function FindingField({
 var USER_KEY = "rrp_users_v1";
 var SESSION_KEY = "rrp_session_v1";
 var LOCAL_DRAFT_PREFIX = "rrp_local_drafts_";
+var LOCAL_RECORD_PREFIX = "rrp_local_records_";
 var LOCAL_SHORTCUT_PREFIX = "rrp_local_shortcuts_";
 var DOCTOR_DIRECTORY_KEY = "rrp_doctors_v1";
 var DOCTOR_SPECIALTY_OPTIONS = [
@@ -3897,6 +3898,17 @@ function loadLocalDrafts(username) {
   } catch (e) { return []; }
 }
 
+function saveLocalRecords(username, records) {
+  try { localStorage.setItem(LOCAL_RECORD_PREFIX + username, JSON.stringify(records || [])); } catch (e) {}
+}
+
+function loadLocalRecords(username) {
+  try {
+    var d = JSON.parse(localStorage.getItem(LOCAL_RECORD_PREFIX + username) || "[]");
+    return Array.isArray(d) ? d : [];
+  } catch (e) { return []; }
+}
+
 async function cloudLoadDrafts(username) {
   var res = await fetch("/api/drafts?user=" + encodeURIComponent(username), { method: "GET" });
   var data = await res.json().catch(function() { return {}; });
@@ -3912,6 +3924,67 @@ async function cloudSaveDrafts(username, reports) {
   });
   var data = await res.json().catch(function() { return {}; });
   if (!res.ok) throw new Error((data.error && data.error.message) || "Cloud save failed");
+}
+
+async function cloudLoadRecords(username) {
+  var res = await fetch("/api/records?user=" + encodeURIComponent(username), { method: "GET" });
+  var data = await res.json().catch(function() { return {}; });
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Cloud load failed");
+  return Array.isArray(data.records) ? data.records : [];
+}
+
+async function cloudSaveRecords(username, records) {
+  var res = await fetch("/api/records", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user: username, records: records })
+  });
+  var data = await res.json().catch(function() { return {}; });
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Cloud save failed");
+}
+
+function makeRecordId(activeDraftId, patient, modality, region) {
+  if (activeDraftId) return "record_" + activeDraftId;
+  var raw = [patient && patient.name, patient && patient.studyDate, modality, region]
+    .join("_")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return "record_" + (raw || Date.now());
+}
+
+function getRecordDateISO(record) {
+  var raw = String(
+    (record && record.patient && record.patient.studyDate) ||
+    (record && record.finalizedAt) ||
+    (record && record.savedAt) ||
+    ""
+  ).trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0, 10);
+  var parsed = new Date(raw);
+  if (isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+}
+
+function formatRecordListDate(record) {
+  var raw = (record && record.finalizedAt) || "";
+  var parsed = raw ? new Date(raw) : null;
+  if (parsed && !isNaN(parsed.getTime())) {
+    var dd = String(parsed.getDate()).padStart(2, "0");
+    var mm = String(parsed.getMonth() + 1).padStart(2, "0");
+    var yyyy = parsed.getFullYear();
+    var hh = String(parsed.getHours()).padStart(2, "0");
+    var min = String(parsed.getMinutes()).padStart(2, "0");
+    return dd + "-" + mm + "-" + yyyy + " " + hh + ":" + min;
+  }
+  var iso = getRecordDateISO(record);
+  if (!iso) return "—";
+  var d = new Date(iso + "T00:00:00");
+  var day = String(d.getDate()).padStart(2, "0");
+  var month = String(d.getMonth() + 1).padStart(2, "0");
+  return day + "-" + month + "-" + d.getFullYear();
 }
 
 function splitCsv(v, toLower) {
@@ -5038,8 +5111,10 @@ function RadReport() {
   var [fieldShortcutInput, setFieldShortcutInput] = useState({});
   var [draftQuery, setDraftQuery] = useState("");
   var [savedReports, setSavedReports] = useState([]);
+  var [savedRecords, setSavedRecords] = useState([]);
   var [activeDraftId, setActiveDraftId] = useState(null);
   var [syncingDrafts, setSyncingDrafts] = useState(false);
+  var [syncingRecords, setSyncingRecords] = useState(false);
   var [authUser, setAuthUser] = useState(null);
   var [users, setUsers] = useState([]);
   var [loginForm, setLoginForm] = useState({ username: "", password: "" });
@@ -5049,6 +5124,10 @@ function RadReport() {
   var [shortcutAdminQuery, setShortcutAdminQuery] = useState("");
   var [shortcutEditor, setShortcutEditor] = useState(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
   var [shortcutBackStep, setShortcutBackStep] = useState("home");
+  var [recordBackStep, setRecordBackStep] = useState("home");
+  var [recordQuery, setRecordQuery] = useState("");
+  var [recordFilters, setRecordFilters] = useState({ start: "", end: "" });
+  var [selectedRecordId, setSelectedRecordId] = useState(null);
   var [doctorDirectory, setDoctorDirectory] = useState([]);
   var [doctorForm, setDoctorForm] = useState(makeEmptyDoctorForm);
   var [doctorDrawerOpen, setDoctorDrawerOpen] = useState(false);
@@ -5065,6 +5144,11 @@ function RadReport() {
   var openShortcutManager = useCallback(function(backStep) {
     setShortcutBackStep(backStep || "home");
     setStep("shortcuts");
+  }, []);
+
+  var openRecords = useCallback(function(backStep) {
+    setRecordBackStep(backStep || "home");
+    setStep("records");
   }, []);
 
   var resetShortcutEditor = useCallback(function() {
@@ -5300,6 +5384,56 @@ function RadReport() {
     return words.some(function(w) { return low.indexOf(w) !== -1; });
   }
 
+  var persistAllRecords = useCallback(async function(next) {
+    if (!authUser || !authUser.username) return;
+    saveLocalRecords(authUser.username, next);
+    setSyncingRecords(true);
+    try {
+      await cloudSaveRecords(authUser.username, next);
+      showToast("☁️ Record book synced", "success");
+    } catch (e) {
+      showToast("Record book cloud sync unavailable, saved locally", "info");
+    } finally {
+      setSyncingRecords(false);
+    }
+  }, [authUser, showToast]);
+
+  var saveRecordSnapshot = useCallback(function(meta, quiet) {
+    if (!authUser || !authUser.username || !patient.name) return null;
+    var recordId = makeRecordId(activeDraftId, patient, modality, region);
+    var snapshot = {
+      id: recordId,
+      sourceDraftId: activeDraftId || null,
+      label: patient.name,
+      modality: modality,
+      region: region,
+      patient: patient,
+      findings: findings,
+      tags: tags,
+      contentStyles: contentStyles,
+      impression: impression,
+      recommendation: recommendation,
+      urgency: urgency,
+      finalizedAt: (meta && meta.at) || new Date().toISOString(),
+      finalizedMeta: meta || finalizedMeta || null,
+      updatedBy: authUser.username
+    };
+    setSavedRecords(function(prev) {
+      var next = prev.slice();
+      var idx = next.findIndex(function(item) { return item.id === recordId; });
+      if (idx >= 0) next[idx] = Object.assign({}, next[idx], snapshot);
+      else next.unshift(snapshot);
+      next.sort(function(a, b) {
+        return String((b && b.finalizedAt) || "").localeCompare(String((a && a.finalizedAt) || ""));
+      });
+      persistAllRecords(next);
+      return next;
+    });
+    setSelectedRecordId(recordId);
+    if (!quiet) showToast("📚 Record book updated", "success");
+    return snapshot;
+  }, [authUser, activeDraftId, patient, modality, region, findings, tags, contentStyles, impression, recommendation, urgency, finalizedMeta, persistAllRecords, showToast]);
+
   var finalizeReport = useCallback(function() {
     if (!canFinalize) {
       showToast("Only Admin/Radiologist can finalize", "error");
@@ -5317,8 +5451,9 @@ function RadReport() {
       score: result.score
     };
     setFinalizedMeta(meta);
+    saveRecordSnapshot(meta, true);
     showToast("✅ Report finalized (" + result.score + "% confidence)", "success");
-  }, [canFinalize, runFinalizeAudit, authUser, patient.reportingDoc, showToast]);
+  }, [canFinalize, runFinalizeAudit, authUser, patient.reportingDoc, saveRecordSnapshot, showToast]);
 
   var persistAllDrafts = useCallback(async function(next) {
     if (!authUser || !authUser.username) return;
@@ -5354,6 +5489,24 @@ function RadReport() {
 
   useEffect(function() {
     if (!authUser || !authUser.username) {
+      setSavedRecords([]);
+      return;
+    }
+    var local = loadLocalRecords(authUser.username);
+    setSavedRecords(local);
+    (async function() {
+      try {
+        var cloud = await cloudLoadRecords(authUser.username);
+        if (Array.isArray(cloud) && cloud.length) {
+          setSavedRecords(cloud);
+          saveLocalRecords(authUser.username, cloud);
+        }
+      } catch (e) {}
+    })();
+  }, [authUser]);
+
+  useEffect(function() {
+    if (!authUser || !authUser.username) {
       setCustomShortcuts([]);
       return;
     }
@@ -5379,11 +5532,15 @@ function RadReport() {
     localStorage.removeItem(SESSION_KEY);
     setAuthUser(null);
     setSavedReports([]);
+    setSavedRecords([]);
     setCustomShortcuts([]);
     setContentStyles({});
     setDoctorDrawerOpen(false);
     setDoctorPanelTab("list");
     setDoctorForm(makeEmptyDoctorForm());
+    setRecordQuery("");
+    setRecordFilters({ start: "", end: "" });
+    setSelectedRecordId(null);
     setShortcutAdminQuery("");
     setShortcutEditor(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
     setActiveDraftId(null);
@@ -5451,6 +5608,26 @@ function RadReport() {
     setUrgency(draft.urgency || "Routine");
     setStep("template");
     showToast("📂 Draft loaded", "success");
+  }, [showToast]);
+
+  var loadRecordIntoWorkspace = useCallback(function(record, nextStep) {
+    if (!record) return;
+    importedTemplateSeedRef.current = (record && record.modality && record.region) ? (record.modality + "__" + record.region) : "";
+    setActiveDraftId(record.sourceDraftId || null);
+    setModality(record.modality || null);
+    setRegion(record.region || null);
+    setPatient(Object.assign(makeEmptyPatient(), record.patient || {}));
+    setFindings(record.findings || {});
+    setTags(record.tags || {});
+    setContentStyles(record.contentStyles || {});
+    setImpression(record.impression || "");
+    setRec(record.recommendation || "");
+    setUrgency(record.urgency || "Routine");
+    setFinalizedMeta(record.finalizedMeta || null);
+    setFinalizeAudit(null);
+    setSelectedRecordId(record.id || null);
+    setStep(nextStep || "preview");
+    showToast("📚 Record loaded", "success");
   }, [showToast]);
 
   var restoreVersion = useCallback(function(draft, ver) {
@@ -5871,6 +6048,23 @@ function RadReport() {
     var hay = [d.label || "", patientName, d.modality || "", d.region || "", d.updatedBy || ""].join(" ").toLowerCase();
     return hay.indexOf(draftQ) !== -1;
   });
+  var recordQ = recordQuery.trim().toLowerCase();
+  var filteredRecords = savedRecords.filter(function(record) {
+    var recordDate = getRecordDateISO(record);
+    if (recordFilters.start && recordDate && recordDate < recordFilters.start) return false;
+    if (recordFilters.start && !recordDate) return false;
+    if (recordFilters.end && recordDate && recordDate > recordFilters.end) return false;
+    if (recordFilters.end && !recordDate) return false;
+    if (!recordQ) return true;
+    var patientName = record && record.patient && record.patient.name ? record.patient.name : "";
+    var patientRef = record && record.patient && record.patient.refBy ? record.patient.refBy : "";
+    var reportedBy = record && record.patient && record.patient.reportingDoc ? record.patient.reportingDoc : "";
+    var hay = [patientName, patientRef, reportedBy, record.modality || "", record.region || "", record.urgency || "", formatRecordListDate(record)].join(" ").toLowerCase();
+    return hay.indexOf(recordQ) !== -1;
+  }).sort(function(a, b) {
+    return String((b && b.finalizedAt) || "").localeCompare(String((a && a.finalizedAt) || ""));
+  });
+  var selectedRecord = filteredRecords.find(function(record) { return record.id === selectedRecordId; }) || filteredRecords[0] || null;
   var shortcutQ = shortcutAdminQuery.trim().toLowerCase();
   var shortcutManagerRows = (shortcutQ ? allShortcuts.filter(function(sc) {
     var hay = [sc.code || "", sc.title || "", (sc.fallback || ""), (sc.regionKeywords || []).join(" "), (sc.sectionKeywords || []).join(" "), (sc.fieldKeywords || []).join(" ")].join(" ").toLowerCase();
@@ -6112,6 +6306,7 @@ function RadReport() {
             {doctorDirectory.length} doctor{doctorDirectory.length === 1 ? "" : "s"} saved in the side directory.
           </div>
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            <button style={obtn("#fff")} onClick={function(){ openRecords("home"); }}>Record Book</button>
             <button style={obtn("#38BDF8")} onClick={function(){ openDoctorPanel("list"); }}>Doctor List</button>
             <button style={btn("linear-gradient(135deg,#0EA5E9,#38BDF8)", "#03111F")} onClick={function(){ openDoctorPanel("add"); }}>+ Add Doctor</button>
           </div>
@@ -6516,6 +6711,7 @@ function RadReport() {
         right={<div style={{display:"flex",gap:10,alignItems:"center"}}>
           <span style={{fontSize:12,color:"rgba(255,255,255,.5)"}}>{patient.name}</span>
           <button style={obtn("#fff")} onClick={function(){ setStep("drafts"); }}>Drafts</button>
+          <button style={obtn("#fff")} onClick={function(){ openRecords("template"); }}>Records</button>
           <button style={obtn("#fff")} onClick={function(){ openShortcutManager("template"); }}>Shortcuts</button>
           <button style={obtn("#fff")} onClick={function(){ var nm = window.prompt("Draft name", patient.name || "Untitled draft"); if (nm !== null) saveDraft(nm); }}>Save Draft</button>
           <button style={btn(tpl.accent)} onClick={function(){setStep("impression");}}>Impression →</button>
@@ -6683,6 +6879,7 @@ function RadReport() {
       <AppHdr onBack backTo="template" setStep={setStep} sub="Impression & Recommendations"
         right={<div style={{display:"flex",gap:10}}>
           <button style={obtn("#fff")} onClick={function(){ setStep("drafts"); }}>Drafts</button>
+          <button style={obtn("#fff")} onClick={function(){ openRecords("impression"); }}>Records</button>
           <button style={obtn("#fff")} onClick={function(){ var nm = window.prompt("Draft name", patient.name || "Untitled draft"); if (nm !== null) saveDraft(nm); }}>Save Draft</button>
           <button style={btn(C.col)} onClick={function(){setStep("preview");}}>Preview Report →</button>
         </div>}
@@ -6779,6 +6976,155 @@ function RadReport() {
     </div>
   );
 
+  if (step === "records") return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.bg,minHeight:"100vh"}}>
+      <style>{CSS}</style>
+      <Toast msg={toast&&toast.msg} type={toast&&toast.type} onClose={function(){setToast(null);}} />
+      <AppHdr onBack backTo={recordBackStep || "home"} setStep={setStep} sub="Record Book"
+        right={<div style={{display:"flex",gap:10,alignItems:"center"}}>
+          <span style={{fontSize:12,color:"rgba(255,255,255,.6)"}}>{syncingRecords ? "Syncing..." : "Cloud sync idle"}</span>
+          <button style={obtn("#fff")} onClick={function(){ persistAllRecords(savedRecords); }}>Sync Now</button>
+          {selectedRecord && <button style={obtn("#fff")} onClick={function(){ loadRecordIntoWorkspace(selectedRecord, "preview"); }}>Open Preview</button>}
+        </div>}
+      />
+      <div style={pg}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:12,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontFamily:"'DM Serif Display',serif",fontSize:28,color:C.navy}}>Patient Record Book</div>
+            <div style={{fontSize:12,color:C.soft,marginTop:4}}>Finalized reports are auto-saved here and listed datewise in the same flow as Medicubes Final Reports.</div>
+          </div>
+          <div style={{fontSize:12,color:C.soft}}>{filteredRecords.length} shown / {savedRecords.length} finalized</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.55fr) minmax(280px,.95fr)",gap:16,alignItems:"start"}}>
+          <div style={crd}>
+            <div style={cHd(C.col)}>
+              <span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Verified Reports</span>
+            </div>
+            <div style={{padding:"16px 20px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:12}}>
+                <input
+                  className="ri"
+                  style={inp({maxWidth:420})}
+                  placeholder="Search patient, doctor, modality, region..."
+                  value={recordQuery}
+                  onChange={function(e){ setRecordQuery(e.target.value); }}
+                />
+                <div style={{fontSize:11,color:C.soft}}>Visit Date format: `dd-MM-yyyy HH:mm`</div>
+              </div>
+              {!savedRecords.length && (
+                <div style={{background:"#fff",border:"1px solid "+C.bdr,borderRadius:12,padding:20,color:C.soft}}>
+                  No finalized reports yet. Finalize a report and it will appear here automatically.
+                </div>
+              )}
+              {!!savedRecords.length && !filteredRecords.length && (
+                <div style={{background:"#fff",border:"1px solid "+C.bdr,borderRadius:12,padding:20,color:C.soft}}>
+                  No records match your current search or date filter.
+                </div>
+              )}
+              {!!filteredRecords.length && (
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse"}}>
+                    <thead>
+                      <tr>
+                        <th style={{textAlign:"left",padding:"10px 8px",fontSize:11,color:C.soft,textTransform:"uppercase",letterSpacing:.7,borderBottom:"1px solid "+C.bdr}}>Patient</th>
+                        <th style={{textAlign:"left",padding:"10px 8px",fontSize:11,color:C.soft,textTransform:"uppercase",letterSpacing:.7,borderBottom:"1px solid "+C.bdr}}>Modality</th>
+                        <th style={{textAlign:"left",padding:"10px 8px",fontSize:11,color:C.soft,textTransform:"uppercase",letterSpacing:.7,borderBottom:"1px solid "+C.bdr}}>Region</th>
+                        <th style={{textAlign:"left",padding:"10px 8px",fontSize:11,color:C.soft,textTransform:"uppercase",letterSpacing:.7,borderBottom:"1px solid "+C.bdr,whiteSpace:"nowrap"}}>Visit Date</th>
+                        <th style={{textAlign:"left",padding:"10px 8px",fontSize:11,color:C.soft,textTransform:"uppercase",letterSpacing:.7,borderBottom:"1px solid "+C.bdr}}>Reported By</th>
+                        <th style={{textAlign:"right",padding:"10px 8px",fontSize:11,color:C.soft,textTransform:"uppercase",letterSpacing:.7,borderBottom:"1px solid "+C.bdr}}>Open</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredRecords.map(function(record) {
+                        var active = selectedRecord && selectedRecord.id === record.id;
+                        return (
+                          <tr key={record.id} style={{background:active ? "#EFF6FF" : "transparent",cursor:"pointer"}} onClick={function(){ setSelectedRecordId(record.id); }}>
+                            <td style={{padding:"11px 8px",borderBottom:"1px solid "+C.bdr}}>
+                              <div style={{fontWeight:700,color:C.navy}}>{(record.patient && record.patient.name) || record.label || "—"}</div>
+                              <div style={{fontSize:11,color:C.soft,marginTop:2}}>{(record.patient && record.patient.refBy) || "No referral"}</div>
+                            </td>
+                            <td style={{padding:"11px 8px",borderBottom:"1px solid "+C.bdr,fontSize:13,color:C.txt}}>{record.modality || "—"}</td>
+                            <td style={{padding:"11px 8px",borderBottom:"1px solid "+C.bdr,fontSize:13,color:C.txt}}>{record.region || "—"}</td>
+                            <td style={{padding:"11px 8px",borderBottom:"1px solid "+C.bdr,fontSize:13,color:C.txt,whiteSpace:"nowrap"}}>{formatRecordListDate(record)}</td>
+                            <td style={{padding:"11px 8px",borderBottom:"1px solid "+C.bdr,fontSize:13,color:C.txt}}>{(record.patient && record.patient.reportingDoc) || (record.finalizedMeta && record.finalizedMeta.by) || "—"}</td>
+                            <td style={{padding:"11px 8px",borderBottom:"1px solid "+C.bdr,textAlign:"right"}}>
+                              <button style={btn(C.col, "#fff", {padding:"7px 12px"})} onClick={function(e){ e.stopPropagation(); loadRecordIntoWorkspace(record, "preview"); }}>Open</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{display:"grid",gap:16}}>
+            <div style={crd}>
+              <div style={cHd("#0EA5E9")}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Date Filters</span></div>
+              <div style={{padding:20}}>
+                <div style={{display:"grid",gap:12}}>
+                  <div>
+                    <label style={lbl}>From</label>
+                    <input className="ri" type="date" style={inp()} value={recordFilters.start} onChange={function(e){ setRecordFilters(function(prev){ return Object.assign({}, prev, { start: e.target.value }); }); }} />
+                  </div>
+                  <div>
+                    <label style={lbl}>To</label>
+                    <input className="ri" type="date" style={inp()} value={recordFilters.end} onChange={function(e){ setRecordFilters(function(prev){ return Object.assign({}, prev, { end: e.target.value }); }); }} />
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:14}}>
+                  <button style={obtn(C.col)} onClick={function(){
+                    var today = new Date().toISOString().slice(0, 10);
+                    setRecordFilters({ start: today, end: today });
+                  }}>Today</button>
+                  <button style={obtn(C.col)} onClick={function(){
+                    var end = new Date();
+                    var start = new Date();
+                    start.setDate(end.getDate() - 6);
+                    setRecordFilters({ start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) });
+                  }}>Last 7 Days</button>
+                  <button style={obtn(C.soft)} onClick={function(){ setRecordFilters({ start: "", end: "" }); setRecordQuery(""); }}>Clear</button>
+                </div>
+                <div style={{fontSize:11,color:C.soft,marginTop:12}}>Medicubes sample filter format: <b>dd-MMM-yyyy</b>. This record book uses the same From/To filtering pattern.</div>
+              </div>
+            </div>
+
+            <div style={crd}>
+              <div style={cHd(C.ok)}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Selected Record</span></div>
+              <div style={{padding:20}}>
+                {!selectedRecord && (
+                  <div style={{fontSize:13,color:C.soft}}>Select a finalized report from the list to review it.</div>
+                )}
+                {selectedRecord && (
+                  <div>
+                    <div style={{fontSize:18,fontWeight:800,color:C.navy}}>{(selectedRecord.patient && selectedRecord.patient.name) || selectedRecord.label || "—"}</div>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
+                      <span style={{fontSize:11,padding:"4px 9px",borderRadius:999,background:"#F0F4FF",color:"#334155"}}>{selectedRecord.modality || "—"}</span>
+                      <span style={{fontSize:11,padding:"4px 9px",borderRadius:999,background:"#F8FAFC",color:"#475569"}}>{selectedRecord.region || "—"}</span>
+                      <span style={{fontSize:11,padding:"4px 9px",borderRadius:999,background:"#ECFDF5",color:"#166534"}}>{selectedRecord.urgency || "Routine"}</span>
+                    </div>
+                    <div style={{marginTop:14,display:"grid",gap:10}}>
+                      <div><div style={{fontSize:10,fontWeight:700,color:C.soft,textTransform:"uppercase",letterSpacing:.8}}>Visit Date</div><div style={{fontSize:13,color:C.txt,marginTop:2}}>{formatRecordListDate(selectedRecord)}</div></div>
+                      <div><div style={{fontSize:10,fontWeight:700,color:C.soft,textTransform:"uppercase",letterSpacing:.8}}>Scan and Reported by</div><div style={{fontSize:13,color:C.txt,marginTop:2}}>{(selectedRecord.patient && selectedRecord.patient.reportingDoc) || (selectedRecord.finalizedMeta && selectedRecord.finalizedMeta.by) || "—"}</div></div>
+                      <div><div style={{fontSize:10,fontWeight:700,color:C.soft,textTransform:"uppercase",letterSpacing:.8}}>Clinical History</div><div style={{fontSize:13,color:C.txt,marginTop:2,whiteSpace:"pre-wrap"}}>{(selectedRecord.patient && selectedRecord.patient.clinicalInfo) || "—"}</div></div>
+                      <div><div style={{fontSize:10,fontWeight:700,color:C.soft,textTransform:"uppercase",letterSpacing:.8}}>Impression</div><div style={{fontSize:13,color:C.txt,marginTop:2,whiteSpace:"pre-wrap"}}>{selectedRecord.impression || "—"}</div></div>
+                    </div>
+                    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:16}}>
+                      <button style={btn(C.col, "#fff")} onClick={function(){ loadRecordIntoWorkspace(selectedRecord, "preview"); }}>Open Preview</button>
+                      <button style={obtn(C.col)} onClick={function(){ loadRecordIntoWorkspace(selectedRecord, "template"); }}>Load Into Editor</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   if (step === "drafts") return (
     <div style={{fontFamily:"'DM Sans',sans-serif",background:C.bg,minHeight:"100vh"}}>
       <style>{CSS}</style>
@@ -6786,6 +7132,7 @@ function RadReport() {
       <AppHdr onBack backTo={region ? "template" : "home"} setStep={setStep} sub="Draft Library"
         right={<div style={{display:"flex",gap:10,alignItems:"center"}}>
           <span style={{fontSize:12,color:"rgba(255,255,255,.6)"}}>{syncingDrafts ? "Syncing..." : "Cloud sync idle"}</span>
+          <button style={obtn("#fff")} onClick={function(){ openRecords("drafts"); }}>Records</button>
           <button style={obtn("#fff")} onClick={function(){ persistAllDrafts(savedReports); }}>Sync Now</button>
         </div>}
       />
@@ -6867,6 +7214,7 @@ function RadReport() {
           right={<div style={{display:"flex",gap:10}}>
             <button style={obtn("#fff")} onClick={function(){ setStep("impression"); }}>← Impression</button>
             <button style={obtn("#fff")} onClick={function(){ setStep("drafts"); }}>Drafts</button>
+            <button style={obtn("#fff")} onClick={function(){ openRecords("preview"); }}>Records</button>
             <button style={obtn("#fff")} onClick={function(){ var nm = window.prompt("Draft name", patient.name || "Untitled draft"); if (nm !== null) saveDraft(nm); }}>Save Draft</button>
             <button style={obtn("#fff")} onClick={function(){window.print();}}>🖨️ Print / PDF</button>
             <button style={obtn("#fff")} onClick={runFinalizeAudit}>Run QA</button>
