@@ -6006,8 +6006,9 @@ function RadReport() {
     return (
       <div style={{fontFamily:"'DM Sans',sans-serif",background:C.bg,minHeight:"100vh"}}>
         <style>{CSS}</style>
-        <AppHdr setStep={setStep} sub="Report Preview"
+        <AppHdr onBack backTo="impression" setStep={setStep} sub="Report Preview"
           right={<div style={{display:"flex",gap:10}}>
+            <button style={obtn("#fff")} onClick={function(){ setStep("impression"); }}>← Impression</button>
             <button style={obtn("#fff")} onClick={function(){ setStep("drafts"); }}>Drafts</button>
             <button style={obtn("#fff")} onClick={function(){ var nm = window.prompt("Draft name", patient.name || "Untitled draft"); if (nm !== null) saveDraft(nm); }}>Save Draft</button>
             <button style={obtn("#fff")} onClick={function(){window.print();}}>🖨️ Print / PDF</button>
