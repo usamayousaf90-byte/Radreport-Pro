@@ -4261,10 +4261,6 @@ function computeProstateWeightText(dimA, dimB, dimC) {
   return (Math.round(weight * 10) / 10).toFixed(1) + " gms";
 }
 
-function normalizeAutoComparable(value) {
-  return String(value == null ? "" : value).trim();
-}
-
 function buildStructuredAutoContext(meta, rawValue) {
   var sourceValue = String(rawValue == null ? "" : rawValue);
   if (sourceValue.indexOf("•") === -1 && meta && String(meta.defaultRaw || "").indexOf("•") !== -1) {
@@ -4273,75 +4269,53 @@ function buildStructuredAutoContext(meta, rawValue) {
   return parseStructuredRows(sourceValue);
 }
 
-function setAutoManagedCell(nextRows, prevRows, rowIndex, tokenIndex, nextAutoValue, prevAutoValue) {
-  if (!nextRows[rowIndex]) nextRows[rowIndex] = [];
-  var currentValue = normalizeAutoComparable(nextRows[rowIndex][tokenIndex]);
-  var previousValue = normalizeAutoComparable(prevRows[rowIndex] && prevRows[rowIndex][tokenIndex]);
-  var previousAuto = normalizeAutoComparable(prevAutoValue);
-  if (!currentValue || currentValue === previousValue || currentValue === previousAuto) {
-    nextRows[rowIndex][tokenIndex] = nextAutoValue || "";
-  }
-}
-
-function applyStructuredAutoCalculations(meta, prevRawValue, nextRawValue, studyDate) {
-  if (!meta || !isStructuredControlType(meta.controlType)) return nextRawValue;
+function buildStructuredReferenceMap(meta, rawValue, studyDate) {
+  var refs = {};
+  if (!meta || !isStructuredControlType(meta.controlType)) return refs;
   var type = Number(meta.controlType);
-  var prevRows = buildStructuredAutoContext(meta, prevRawValue);
-  var nextRows = buildStructuredAutoContext(meta, nextRawValue);
+  var rows = buildStructuredAutoContext(meta, rawValue);
+
+  function setRef(rowIndex, tokenIndex, value) {
+    if (!value) return;
+    refs[rowIndex + ":" + tokenIndex] = value;
+  }
 
   if (type === 6 || type === 7 || type === 13 || type === 14) {
     var visibleTokenIndexes = [1, 3, 5, 7].slice(0, getCrlVisibleCount(type));
     visibleTokenIndexes.forEach(function(tokenIndex) {
-      var prevGaDays = computeCrlGestationalDays(extractNumericValue(prevRows[0] && prevRows[0][tokenIndex]));
-      var nextGaDays = computeCrlGestationalDays(extractNumericValue(nextRows[0] && nextRows[0][tokenIndex]));
-      setAutoManagedCell(nextRows, prevRows, 1, tokenIndex, nextGaDays ? formatGestationalAgeFromDays(nextGaDays) : "", prevGaDays ? formatGestationalAgeFromDays(prevGaDays) : "");
-      setAutoManagedCell(nextRows, prevRows, 2, tokenIndex, nextGaDays ? formatEstimatedDueDate(studyDate, nextGaDays) : "", prevGaDays ? formatEstimatedDueDate(studyDate, prevGaDays) : "");
+      var gaDays = computeCrlGestationalDays(extractNumericValue(rows[0] && rows[0][tokenIndex]));
+      setRef(1, tokenIndex, gaDays ? formatGestationalAgeFromDays(gaDays) : "");
+      setRef(2, tokenIndex, gaDays ? formatEstimatedDueDate(studyDate, gaDays) : "");
     });
-    return serializeStructuredRows(nextRows);
+    return refs;
   }
 
   if (type === 3 || type === 4 || type === 5 || type === 20) {
-    var prevBpdCm = convertMeasurementToCm(extractNumericValue(prevRows[1] && prevRows[1][1]));
-    var prevFlCm = convertMeasurementToCm(extractNumericValue(prevRows[2] && prevRows[2][1]));
-    var prevAcCm = convertMeasurementToCm(extractNumericValue(prevRows[3] && prevRows[3][1]));
-    var nextBpdCm = convertMeasurementToCm(extractNumericValue(nextRows[1] && nextRows[1][1]));
-    var nextFlCm = convertMeasurementToCm(extractNumericValue(nextRows[2] && nextRows[2][1]));
-    var nextAcCm = convertMeasurementToCm(extractNumericValue(nextRows[3] && nextRows[3][1]));
+    var bpdCm = convertMeasurementToCm(extractNumericValue(rows[1] && rows[1][1]));
+    var flCm = convertMeasurementToCm(extractNumericValue(rows[2] && rows[2][1]));
+    var acCm = convertMeasurementToCm(extractNumericValue(rows[3] && rows[3][1]));
+    var bpdGa = computeHadlockGaByBpdWeeks(bpdCm);
+    var flGa = computeHadlockGaByFlWeeks(flCm);
+    var acGa = computeHadlockGaByAcWeeks(acCm);
+    var bestGa = computeBestHadlockGaWeeks(bpdCm, acCm, flCm);
+    var fetalWeight = computeHadlockFetalWeightGrams(bpdCm, acCm, flCm);
 
-    var prevBpdGa = computeHadlockGaByBpdWeeks(prevBpdCm);
-    var prevFlGa = computeHadlockGaByFlWeeks(prevFlCm);
-    var prevAcGa = computeHadlockGaByAcWeeks(prevAcCm);
-    var prevBestGa = computeBestHadlockGaWeeks(prevBpdCm, prevAcCm, prevFlCm);
-    var prevFetalWeight = computeHadlockFetalWeightGrams(prevBpdCm, prevAcCm, prevFlCm);
+    setRef(1, 3, bpdGa ? formatGestationalAgeFromWeeks(bpdGa) : "");
+    setRef(2, 3, flGa ? formatGestationalAgeFromWeeks(flGa) : "");
+    setRef(3, 3, acGa ? formatGestationalAgeFromWeeks(acGa) : "");
+    setRef(4, 1, bestGa ? formatGestationalAgeFromWeeks(bestGa) : "");
+    setRef(5, 1, bestGa ? formatEstimatedDueDate(studyDate, bestGa * 7) : "");
+    setRef(6, 3, fetalWeight ? String(Math.round(fetalWeight)) : "");
 
-    var nextBpdGa = computeHadlockGaByBpdWeeks(nextBpdCm);
-    var nextFlGa = computeHadlockGaByFlWeeks(nextFlCm);
-    var nextAcGa = computeHadlockGaByAcWeeks(nextAcCm);
-    var nextBestGa = computeBestHadlockGaWeeks(nextBpdCm, nextAcCm, nextFlCm);
-    var nextFetalWeight = computeHadlockFetalWeightGrams(nextBpdCm, nextAcCm, nextFlCm);
-
-    setAutoManagedCell(nextRows, prevRows, 1, 3, nextBpdGa ? formatGestationalAgeFromWeeks(nextBpdGa) : "", prevBpdGa ? formatGestationalAgeFromWeeks(prevBpdGa) : "");
-    setAutoManagedCell(nextRows, prevRows, 2, 3, nextFlGa ? formatGestationalAgeFromWeeks(nextFlGa) : "", prevFlGa ? formatGestationalAgeFromWeeks(prevFlGa) : "");
-    setAutoManagedCell(nextRows, prevRows, 3, 3, nextAcGa ? formatGestationalAgeFromWeeks(nextAcGa) : "", prevAcGa ? formatGestationalAgeFromWeeks(prevAcGa) : "");
-    setAutoManagedCell(nextRows, prevRows, 4, 1, nextBestGa ? formatGestationalAgeFromWeeks(nextBestGa) : "", prevBestGa ? formatGestationalAgeFromWeeks(prevBestGa) : "");
-    setAutoManagedCell(nextRows, prevRows, 5, 1, nextBestGa ? formatEstimatedDueDate(studyDate, nextBestGa * 7) : "", prevBestGa ? formatEstimatedDueDate(studyDate, prevBestGa * 7) : "");
-    setAutoManagedCell(nextRows, prevRows, 6, 3, nextFetalWeight ? String(Math.round(nextFetalWeight)) : "", prevFetalWeight ? String(Math.round(prevFetalWeight)) : "");
-
-    return serializeStructuredRows(nextRows);
+    return refs;
   }
 
   if (type === 9) {
-    if (!nextRows[0]) nextRows[0] = [];
-    if (!prevRows[0]) prevRows[0] = [];
-    if (!nextRows[0][5]) nextRows[0][5] = extractProstateNoteText(nextRows[0][4]);
-    if (!prevRows[0][5]) prevRows[0][5] = extractProstateNoteText(prevRows[0][4]);
-    var prevWeight = computeProstateWeightText(prevRows[0][1], prevRows[0][2], prevRows[0][3]);
-    var nextWeight = computeProstateWeightText(nextRows[0][1], nextRows[0][2], nextRows[0][3]);
-    setAutoManagedCell(nextRows, prevRows, 0, 4, nextWeight, prevWeight);
-    return serializeStructuredRows(nextRows);
+    setRef(0, 4, computeProstateWeightText(rows[0] && rows[0][1], rows[0] && rows[0][2], rows[0] && rows[0][3]));
+    return refs;
   }
 
-  return nextRawValue;
+  return refs;
 }
 
 function parseStructuredRows(rawValue) {
@@ -4545,8 +4519,12 @@ function StructuredFieldInput({ value, onChange, placeholder, width, multiline }
   );
 }
 
-function ImportedStructuredField({ fieldLabel, meta, value, onChange }) {
+function ImportedStructuredField({ fieldLabel, meta, value, onChange, studyDate }) {
   var parsed = parseStructuredField(meta, value || (meta && meta.defaultRaw) || "");
+  var referenceMap = buildStructuredReferenceMap(meta, value || (meta && meta.defaultRaw) || "", studyDate);
+  var getReference = function(rowIndex, tokenIndex) {
+    return referenceMap[rowIndex + ":" + tokenIndex] || "";
+  };
   return (
     <div style={{marginBottom:18}}>
       <div style={{fontSize:11,fontWeight:700,color:"#5A7090",textTransform:"uppercase",letterSpacing:.9,marginBottom:8}}>{fieldLabel}</div>
@@ -4573,11 +4551,13 @@ function ImportedStructuredField({ fieldLabel, meta, value, onChange }) {
                 <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                   {row.inputs.map(function(input, idx) {
                     var isSentenceCell = row.kind === "three-box" && idx === row.inputs.length - 1;
+                    var referencePlaceholder = getReference(row.rowIndex, input.tokenIndex);
+                    var helperPlaceholder = idx === row.inputs.length - 1 && row.note ? row.note : "";
                     return (
                       <React.Fragment key={idx}>
                         <StructuredFieldInput
                           value={input.value}
-                          placeholder={idx === row.inputs.length - 1 && row.note ? row.note : ""}
+                          placeholder={referencePlaceholder || helperPlaceholder}
                           onChange={function(nextValue){ onChange(updateStructuredValue(value || meta.defaultRaw || "", row.rowIndex, input.tokenIndex, nextValue)); }}
                           width={row.kind === "four-box" ? 120 : isSentenceCell ? 280 : 170}
                           multiline={isSentenceCell}
@@ -4594,7 +4574,7 @@ function ImportedStructuredField({ fieldLabel, meta, value, onChange }) {
                   <div style={{marginTop:10,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                     <StructuredFieldInput
                       value={row.calcInput && row.calcInput.value}
-                      placeholder="Weight auto-calculates here"
+                      placeholder={getReference(row.rowIndex, row.calcInput.tokenIndex) || "Weight reference"}
                       onChange={function(nextValue){ onChange(updateStructuredValue(value || meta.defaultRaw || "", row.rowIndex, row.calcInput.tokenIndex, nextValue)); }}
                       width={180}
                     />
@@ -6244,10 +6224,8 @@ function RadReport() {
                         fieldLabel={meta.paramName || field}
                         meta={meta}
                         value={getF(sec.label, field)}
-                        onChange={function(v){
-                          var prevValue = getF(sec.label, field);
-                          setF(sec.label, field, applyStructuredAutoCalculations(meta, prevValue, v, patient.studyDate));
-                        }}
+                        onChange={function(v){ setF(sec.label, field, v); }}
+                        studyDate={patient.studyDate}
                       />
                     );
                   }
