@@ -4158,6 +4158,156 @@ function readStructuredInputValue(token) {
   return value;
 }
 
+function extractNumericValue(value) {
+  var match = String(value == null ? "" : value).match(/-?\d+(?:\.\d+)?/);
+  if (!match) return null;
+  var num = parseFloat(match[0]);
+  return Number.isFinite(num) ? num : null;
+}
+
+function convertMeasurementToCm(value) {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return value > 15 ? (value / 10) : value;
+}
+
+function formatGestationalAgeFromWeeks(weeks) {
+  if (!Number.isFinite(weeks) || weeks <= 0) return "";
+  var totalDays = Math.round(weeks * 7);
+  var outWeeks = Math.floor(totalDays / 7);
+  var outDays = totalDays % 7;
+  return outDays ? (outWeeks + "w " + outDays + "d") : (outWeeks + "w");
+}
+
+function formatGestationalAgeFromDays(days) {
+  if (!Number.isFinite(days) || days <= 0) return "";
+  var outWeeks = Math.floor(days / 7);
+  var outDays = Math.round(days - (outWeeks * 7));
+  if (outDays === 7) {
+    outWeeks += 1;
+    outDays = 0;
+  }
+  return outDays ? (outWeeks + "w " + outDays + "d") : (outWeeks + "w");
+}
+
+function formatShortDate(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return String(date.getDate()).padStart(2, "0") + " " + months[date.getMonth()] + " " + date.getFullYear();
+}
+
+function formatEstimatedDueDate(studyDate, gestationalAgeDays) {
+  if (!studyDate || !Number.isFinite(gestationalAgeDays) || gestationalAgeDays <= 0) return "";
+  var base = new Date(String(studyDate) + "T00:00:00");
+  if (Number.isNaN(base.getTime())) return "";
+  var remainingDays = Math.round(280 - gestationalAgeDays);
+  base.setDate(base.getDate() + remainingDays);
+  return formatShortDate(base);
+}
+
+function computeCrlGestationalDays(crlMm) {
+  if (!Number.isFinite(crlMm) || crlMm <= 0) return null;
+  return 40.447 + (1.125 * crlMm) - (0.0058 * crlMm * crlMm);
+}
+
+function computeHadlockGaByBpdWeeks(bpdCm) {
+  if (!Number.isFinite(bpdCm) || bpdCm <= 0) return null;
+  return 9.54 + (1.482 * bpdCm) + (0.1676 * bpdCm * bpdCm);
+}
+
+function computeHadlockGaByAcWeeks(acCm) {
+  if (!Number.isFinite(acCm) || acCm <= 0) return null;
+  return 8.14 + (0.753 * acCm) + (0.0036 * acCm * acCm);
+}
+
+function computeHadlockGaByFlWeeks(flCm) {
+  if (!Number.isFinite(flCm) || flCm <= 0) return null;
+  return 10.35 + (2.46 * flCm) + (0.17 * flCm * flCm);
+}
+
+function computeBestHadlockGaWeeks(bpdCm, acCm, flCm) {
+  if (bpdCm && acCm && flCm) {
+    return 10.61 + (0.175 * bpdCm * flCm) + (0.297 * acCm) + (0.71 * flCm);
+  }
+  if (bpdCm && flCm) {
+    return 10.5 + (0.197 * bpdCm * flCm) + (0.95 * flCm) + (0.73 * bpdCm);
+  }
+  if (acCm && flCm) {
+    return 10.47 + (0.442 * acCm) + (0.314 * flCm * flCm) - (0.0121 * flCm * flCm * flCm);
+  }
+  if (bpdCm && acCm) {
+    return 9.57 + (0.524 * acCm) + (0.122 * bpdCm * bpdCm);
+  }
+  return computeHadlockGaByBpdWeeks(bpdCm) || computeHadlockGaByAcWeeks(acCm) || computeHadlockGaByFlWeeks(flCm) || null;
+}
+
+function computeHadlockFetalWeightGrams(bpdCm, acCm, flCm) {
+  if (!bpdCm || !acCm || !flCm) return null;
+  return Math.pow(10, 1.335 - (0.0034 * acCm * flCm) + (0.0316 * bpdCm) + (0.0457 * acCm) + (0.1623 * flCm));
+}
+
+function extractProstateNoteText(value) {
+  var text = String(value == null ? "" : value).trim();
+  if (!text) return "";
+  text = text.replace(/^\(?\s*gms?\s*\)?/i, "").trim();
+  return text;
+}
+
+function computeProstateWeightText(dimA, dimB, dimC) {
+  var nums = [dimA, dimB, dimC].map(extractNumericValue);
+  if (nums.some(function(num) { return !Number.isFinite(num) || num <= 0; })) return "";
+  var dimsCm = nums.map(convertMeasurementToCm);
+  var weight = dimsCm[0] * dimsCm[1] * dimsCm[2] * 0.52;
+  if (!Number.isFinite(weight) || weight <= 0) return "";
+  return (Math.round(weight * 10) / 10).toFixed(1) + " gms";
+}
+
+function applyStructuredAutoCalculations(meta, rawValue, studyDate) {
+  if (!meta || !isStructuredControlType(meta.controlType)) return rawValue;
+  var type = Number(meta.controlType);
+  var rows = parseStructuredRows(rawValue);
+
+  if (type === 6 || type === 7 || type === 13 || type === 14) {
+    var visibleTokenIndexes = [1, 3, 5, 7].slice(0, getCrlVisibleCount(type));
+    visibleTokenIndexes.forEach(function(tokenIndex) {
+      var gaDays = computeCrlGestationalDays(extractNumericValue(rows[0] && rows[0][tokenIndex]));
+      if (!rows[1]) rows[1] = [];
+      if (!rows[2]) rows[2] = [];
+      rows[1][tokenIndex] = gaDays ? formatGestationalAgeFromDays(gaDays) : "";
+      rows[2][tokenIndex] = gaDays ? formatEstimatedDueDate(studyDate, gaDays) : "";
+    });
+    return serializeStructuredRows(rows);
+  }
+
+  if (type === 3 || type === 4 || type === 5 || type === 20) {
+    var bpdCm = convertMeasurementToCm(extractNumericValue(rows[1] && rows[1][1]));
+    var flCm = convertMeasurementToCm(extractNumericValue(rows[2] && rows[2][1]));
+    var acCm = convertMeasurementToCm(extractNumericValue(rows[3] && rows[3][1]));
+    var bpdGa = computeHadlockGaByBpdWeeks(bpdCm);
+    var flGa = computeHadlockGaByFlWeeks(flCm);
+    var acGa = computeHadlockGaByAcWeeks(acCm);
+    var bestGa = computeBestHadlockGaWeeks(bpdCm, acCm, flCm);
+    var fetalWeight = computeHadlockFetalWeightGrams(bpdCm, acCm, flCm);
+
+    if (rows[1]) rows[1][3] = bpdGa ? formatGestationalAgeFromWeeks(bpdGa) : "";
+    if (rows[2]) rows[2][3] = flGa ? formatGestationalAgeFromWeeks(flGa) : "";
+    if (rows[3]) rows[3][3] = acGa ? formatGestationalAgeFromWeeks(acGa) : "";
+    if (rows[4]) rows[4][1] = bestGa ? formatGestationalAgeFromWeeks(bestGa) : "";
+    if (rows[5]) rows[5][1] = bestGa ? formatEstimatedDueDate(studyDate, bestGa * 7) : "";
+    if (rows[6]) rows[6][3] = fetalWeight ? String(Math.round(fetalWeight)) : "";
+
+    return serializeStructuredRows(rows);
+  }
+
+  if (type === 9) {
+    if (!rows[0]) rows[0] = [];
+    if (!rows[0][5]) rows[0][5] = extractProstateNoteText(rows[0][4]);
+    rows[0][4] = computeProstateWeightText(rows[0][1], rows[0][2], rows[0][3]);
+    return serializeStructuredRows(rows);
+  }
+
+  return rawValue;
+}
+
 function parseStructuredRows(rawValue) {
   return String(rawValue == null ? "" : rawValue).split("|").map(function(row) {
     return row.split("•");
@@ -4235,16 +4385,17 @@ function parseStructuredField(meta, rawValue) {
     }
 
     if (type === 9) {
+      var prostateCalcText = readStructuredInputValue(tokens[4]);
       parsedRows.push({
-        kind: "measure-note",
+        kind: "prostate-weight",
         rowIndex: rowIndex,
         tokens: tokens,
         label: cleanStructuredToken(tokens[0]),
         inputs: [1, 2, 3].map(function(tokenIndex) {
           return { tokenIndex: tokenIndex, value: readStructuredInputValue(tokens[tokenIndex]), suffix: "" };
         }),
-        noteInput: { tokenIndex: 4, value: readStructuredInputValue(tokens[4]) },
-        note: cleanStructuredToken(tokens[5])
+        calcText: extractNumericValue(prostateCalcText) != null ? prostateCalcText : "",
+        note: cleanStructuredToken(tokens[5]) || extractProstateNoteText(tokens[4])
       });
       return;
     }
@@ -4293,12 +4444,19 @@ function structuredFieldHasContent(meta, rawValue) {
   var rows = parseStructuredField(meta, rawValue).rows;
   return rows.some(function(row) {
     if (row.kind === "header-cards") return row.texts.some(Boolean);
+    if (row.kind === "prostate-weight") {
+      var hasDims = row.inputs.some(function(input) {
+        var value = cleanStructuredToken(input.value);
+        return !!value && value !== "0";
+      });
+      return hasDims || !!cleanStructuredToken(row.calcText);
+    }
     return row.inputs.some(function(input) {
       var value = cleanStructuredToken(input.value);
       if (!value) return false;
       if ((type === 9 || type === 10 || type === 11 || type === 12) && value === "0") return false;
       return true;
-    }) || !!cleanStructuredToken(row.noteInput && row.noteInput.value) || !!cleanStructuredToken(row.note);
+    }) || !!cleanStructuredToken(row.noteInput && row.noteInput.value) || !!cleanStructuredToken(row.calcText) || !!cleanStructuredToken(row.note);
   });
 }
 
@@ -4316,6 +4474,9 @@ function structuredFieldToText(meta, rawValue) {
     line += parts.join(" | ");
     if (cleanStructuredToken(row.noteInput && row.noteInput.value)) {
       line += (parts.length ? " | " : "") + cleanStructuredToken(row.noteInput.value);
+    }
+    if (cleanStructuredToken(row.calcText)) {
+      line += (parts.length ? " | " : "") + cleanStructuredToken(row.calcText);
     }
     if (cleanStructuredToken(row.note)) {
       line += (parts.length ? " | " : "") + cleanStructuredToken(row.note);
@@ -4390,8 +4551,16 @@ function ImportedStructuredField({ fieldLabel, meta, value, onChange }) {
                     );
                   })}
                 </div>
-                {!!row.note && row.kind !== "three-box" && (
+                {!!row.note && row.kind !== "three-box" && row.kind !== "prostate-weight" && (
                   <div style={{marginTop:6,fontSize:11,color:"#64748B"}}>{row.note}</div>
+                )}
+                {row.kind === "prostate-weight" && (
+                  <div style={{marginTop:10,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                    <div style={{minWidth:180,padding:"10px 12px",border:"1px solid #BFDBFE",borderRadius:10,background:"#EFF6FF",fontSize:13,fontWeight:700,color:"#1D4ED8"}}>
+                      {cleanStructuredToken(row.calcText) || "Weight auto-calculates here"}
+                    </div>
+                    {!!row.note && <div style={{fontSize:12,color:"#64748B"}}>{row.note}</div>}
+                  </div>
                 )}
                 {!!row.noteInput && (
                   <div style={{marginTop:10}}>
@@ -4442,6 +4611,11 @@ function ImportedStructuredPreview({ meta, value }) {
                 })}
                 {!!row.note && <span style={{fontSize:12,color:"#64748B"}}>{row.note}</span>}
               </div>
+              {!!cleanStructuredToken(row.calcText) && (
+                <div style={{marginTop:8,padding:"8px 10px",border:"1px solid #BFDBFE",borderRadius:8,background:"#EFF6FF",fontSize:12,color:"#1D4ED8",fontWeight:700}}>
+                  {cleanStructuredToken(row.calcText)}
+                </div>
+              )}
               {!!cleanStructuredToken(row.noteInput && row.noteInput.value) && (
                 <div style={{marginTop:8,padding:"8px 10px",border:"1px solid #CBD5E1",borderRadius:8,background:"#fff",fontSize:12,color:"#0F172A",whiteSpace:"pre-wrap"}}>
                   {cleanStructuredToken(row.noteInput.value)}
@@ -4714,14 +4888,14 @@ function RadReport() {
       return;
     }
     var meta = {
-      by: authUser ? authUser.username : "unknown",
+      by: patient.reportingDoc || (authUser ? authUser.username : "unknown"),
       role: authUser ? authUser.role : "unknown",
       at: new Date().toISOString(),
       score: result.score
     };
     setFinalizedMeta(meta);
     showToast("✅ Report finalized (" + result.score + "% confidence)", "success");
-  }, [canFinalize, runFinalizeAudit, authUser, showToast]);
+  }, [canFinalize, runFinalizeAudit, authUser, patient.reportingDoc, showToast]);
 
   var persistAllDrafts = useCallback(async function(next) {
     if (!authUser || !authUser.username) return;
@@ -6031,7 +6205,7 @@ function RadReport() {
                         fieldLabel={meta.paramName || field}
                         meta={meta}
                         value={getF(sec.label, field)}
-                        onChange={function(v){ setF(sec.label, field, v); }}
+                        onChange={function(v){ setF(sec.label, field, applyStructuredAutoCalculations(meta, v, patient.studyDate)); }}
                       />
                     );
                   }
@@ -6327,8 +6501,8 @@ function RadReport() {
                 <div style={{marginTop:8,padding:"4px 14px",borderRadius:20,fontSize:11,fontWeight:800,background:urgency==="Routine"?C.ok:urgency==="Urgent"?C.warn:C.err,color:"#fff"}}>{urgency.toUpperCase()}</div>
               </div>
             </div>
-            <div style={{padding:"14px 32px",background:"#F8FAFC",borderBottom:"1px solid "+C.bdr,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:14}}>
-              {[["Patient",patient.name],["Age / Sex",patient.age+" / "+patient.sex],["Referred By",patient.refBy||"—"],["Scan Performed By",patient.scanDoctor||"—"],["Reporting Doctor",patient.reportingDoc||"—"]].map(function(x){return(
+            <div style={{padding:"14px 32px",background:"#F8FAFC",borderBottom:"1px solid "+C.bdr,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:14}}>
+              {[["Patient",patient.name],["Age / Sex",patient.age+" / "+patient.sex],["Referred By",patient.refBy||"—"],["Scan and Reported by",patient.reportingDoc||"—"]].map(function(x){return(
                 <div key={x[0]}><div style={{fontSize:10,fontWeight:700,color:C.soft,textTransform:"uppercase",letterSpacing:.8}}>{x[0]}</div><div style={{fontSize:14,fontWeight:600,color:C.navy,marginTop:2}}>{x[1]||"—"}</div></div>
               );})}
             </div>
@@ -6412,8 +6586,8 @@ function RadReport() {
             <div style={{fontSize:11,color:C.soft}}>Report generated: {new Date().toLocaleString()}<br/>For clinical use by qualified medical practitioners only.</div>
             <div style={{textAlign:"right"}}>
               <div style={{width:180,borderBottom:"2px solid "+C.navy,marginBottom:6}} />
-              <div style={{fontSize:13,fontWeight:700,color:C.navy}}>{patient.reportingDoc||"Reporting Physician"}</div>
-              <div style={{fontSize:11,color:C.soft}}>{patient.scanDoctor ? ("Scan by " + patient.scanDoctor + " · ") : ""}{modality} Reporting</div>
+              <div style={{fontSize:13,fontWeight:700,color:C.navy}}>{patient.reportingDoc||"Doctor"}</div>
+              <div style={{fontSize:11,color:C.soft}}>Scan and Reported by</div>
             </div>
           </div>
         </div>
