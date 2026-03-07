@@ -5216,6 +5216,8 @@ function RadReport() {
   var [patientRegistryQuery, setPatientRegistryQuery] = useState("");
   var [patientRegistryForm, setPatientRegistryForm] = useState(makeEmptyRegistryPatient);
   var [selectedRegistryPatientId, setSelectedRegistryPatientId] = useState(null);
+  var [registryReportModality, setRegistryReportModality] = useState("");
+  var [registryReportRegion, setRegistryReportRegion] = useState("");
   var [recordBackStep, setRecordBackStep] = useState("home");
   var [recordQuery, setRecordQuery] = useState("");
   var [recordFilters, setRecordFilters] = useState({ start: "", end: "" });
@@ -5245,8 +5247,16 @@ function RadReport() {
 
   var openPatientRegistry = useCallback(function(backStep) {
     setPatientRegistryBackStep(backStep || "home");
+    if (backStep === "patient" && modality && region && T[modality] && T[modality].regions.indexOf(region) !== -1) {
+      setRegistryReportModality(modality);
+      setRegistryReportRegion(region);
+      setSelectedRegistryPatientId(patient.registryPatientId || null);
+    } else {
+      setRegistryReportModality("");
+      setRegistryReportRegion("");
+    }
     setStep("registry");
-  }, []);
+  }, [modality, region, patient.registryPatientId]);
 
   var resetShortcutEditor = useCallback(function() {
     setShortcutEditor(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
@@ -5393,7 +5403,7 @@ function RadReport() {
     }
   }, [authUser, showToast]);
 
-  var applyRegistryPatientToStudy = useCallback(function(rawPatient, nextStep) {
+  var applyRegistryPatientToStudy = useCallback(function(rawPatient, nextStep, quiet) {
     var regPatient = normalizeRegistryPatient(rawPatient);
     setPatient(function(prev) {
       var next = Object.assign({}, prev);
@@ -5417,8 +5427,35 @@ function RadReport() {
     });
     setSelectedRegistryPatientId(regPatient.id);
     if (nextStep) setStep(nextStep);
-    showToast("Patient details loaded from registry", "success");
+    if (!quiet) showToast("Patient details loaded from registry", "success");
   }, [showToast]);
+
+  var launchRegistryPatientIntoReport = useCallback(function(rawPatient) {
+    var nextModality = registryReportModality || "";
+    var nextRegion = registryReportRegion || "";
+    if (!nextModality) {
+      showToast("Select the report modality first", "error");
+      return false;
+    }
+    if (!nextRegion) {
+      showToast("Select the report region first", "error");
+      return false;
+    }
+    clearReportWorkspace();
+    setTemplateQuery("");
+    setModality(nextModality);
+    setRegion(nextRegion);
+    applyRegistryPatientToStudy(rawPatient, "patient", true);
+    showToast("Patient loaded. Continue with " + nextModality + " › " + nextRegion, "success");
+    return true;
+  }, [registryReportModality, registryReportRegion, clearReportWorkspace, applyRegistryPatientToStudy, showToast]);
+
+  var saveRegistryPatientAndContinue = useCallback(function() {
+    var prepared = normalizeRegistryPatient(patientRegistryForm);
+    var savedId = saveRegistryPatient(prepared, true);
+    if (!savedId) return;
+    launchRegistryPatientIntoReport(Object.assign({}, prepared, { id: savedId }));
+  }, [patientRegistryForm, saveRegistryPatient, launchRegistryPatientIntoReport]);
 
   var saveRegistryPatient = useCallback(function(rawPatient, quiet) {
     if (!authUser || !authUser.username) return "";
@@ -5768,6 +5805,8 @@ function RadReport() {
     setPatientRegistryForm(makeEmptyRegistryPatient());
     setPatientRegistryQuery("");
     setSelectedRegistryPatientId(null);
+    setRegistryReportModality("");
+    setRegistryReportRegion("");
     setRecordQuery("");
     setRecordFilters({ start: "", end: "" });
     setSelectedRecordId(null);
@@ -6249,6 +6288,7 @@ function RadReport() {
   var pg  = {maxWidth:860,margin:"0 auto",padding:"28px 20px 60px"};
   var q = templateQuery.trim().toLowerCase();
   var modalityEntries = Object.entries(T);
+  var registryReportRegions = registryReportModality && T[registryReportModality] ? T[registryReportModality].regions : [];
   var templateEntries = [];
   if (q) {
     modalityEntries.forEach(function(entry) {
@@ -6553,7 +6593,7 @@ function RadReport() {
             Manage the doctor directory here on the home screen. Doctor selection stays available inside the report flow.
           </div>
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-            <button style={obtn("#fff")} onClick={function(){ openPatientRegistry("home"); }}>Patient Registry</button>
+            <button style={obtn("#fff")} onClick={function(){ openPatientRegistry("home"); }}>Register Patient & Start Report</button>
             <button style={obtn("#fff")} onClick={function(){ openRecords("home"); }}>Record Book</button>
             <button style={obtn("#38BDF8")} onClick={function(){ openDoctorPanel("list"); }}>Doctor Directory</button>
             <button style={btn("linear-gradient(135deg,#0EA5E9,#38BDF8)", "#03111F")} onClick={function(){ openDoctorPanel("add"); }}>+ Add Doctor</button>
@@ -7409,16 +7449,57 @@ function RadReport() {
         right={<div style={{display:"flex",gap:10,alignItems:"center"}}>
           <span style={{fontSize:12,color:"rgba(255,255,255,.6)"}}>{syncingPatients ? "Syncing..." : "Cloud sync idle"}</span>
           <button style={obtn("#fff")} onClick={function(){ persistAllPatients(savedPatients); }}>Sync Now</button>
-          {selectedRegistryPatient && <button style={btn(C.col)} onClick={function(){ applyRegistryPatientToStudy(selectedRegistryPatient, "patient"); }}>Use in Report</button>}
+          {selectedRegistryPatient && <button style={Object.assign({}, btn(C.col), (!registryReportModality || !registryReportRegion) ? {opacity:.55,cursor:"not-allowed"} : {})} disabled={!registryReportModality || !registryReportRegion} onClick={function(){ launchRegistryPatientIntoReport(selectedRegistryPatient); }}>Continue to Report</button>}
         </div>}
       />
       <div style={pg}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:12,flexWrap:"wrap"}}>
           <div>
             <div style={{fontFamily:"'DM Serif Display',serif",fontSize:28,color:C.navy}}>Patient Registry</div>
-            <div style={{fontSize:12,color:C.soft,marginTop:4}}>Based on the Medicubes patient registration flow. Registered patient details can be loaded directly into the Patient & Study Information page.</div>
+            <div style={{fontSize:12,color:C.soft,marginTop:4}}>Based on the Medicubes patient registration flow. Register the patient here, choose the report template below, then continue directly into the reporting page.</div>
           </div>
           <div style={{fontSize:12,color:C.soft}}>{filteredRegistryPatients.length} shown / {savedPatients.length} total</div>
+        </div>
+        <div style={Object.assign({}, crd, { marginBottom: 16 })}>
+          <div style={cHd("#0EA5E9")}><span style={{fontSize:20}}>🧭</span><b style={{color:C.navy,fontSize:15}}>Reporting Sequence</b></div>
+          <div style={{padding:20,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,alignItems:"end"}}>
+            <div>
+              <label style={lbl}>Step 1</label>
+              <div style={{fontSize:13,color:C.txt,lineHeight:1.6,padding:"11px 12px",border:"1.5px solid "+C.bdr,borderRadius:7,background:"#FAFCFF"}}>
+                Select an existing patient on the left, or register a new one on the right.
+              </div>
+            </div>
+            <div>
+              <label style={lbl}>Step 2 · Modality</label>
+              <select className="ri" style={inp({cursor:"pointer"})} value={registryReportModality} onChange={function(e){
+                var nextModality = e.target.value;
+                setRegistryReportModality(nextModality);
+                if (!nextModality || !T[nextModality] || T[nextModality].regions.indexOf(registryReportRegion) === -1) {
+                  setRegistryReportRegion("");
+                }
+              }}>
+                <option value="">Select modality</option>
+                {modalityEntries.map(function(entry) {
+                  return <option key={entry[0]} value={entry[0]}>{entry[0]}</option>;
+                })}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Step 3 · Region</label>
+              <select className="ri" style={inp({cursor:"pointer",opacity:registryReportModality ? 1 : .65})} value={registryReportRegion} onChange={function(e){ setRegistryReportRegion(e.target.value); }} disabled={!registryReportModality}>
+                <option value="">{registryReportModality ? "Select region" : "Select modality first"}</option>
+                {registryReportRegions.map(function(name) {
+                  return <option key={name} value={name}>{name}</option>;
+                })}
+              </select>
+            </div>
+            <button style={Object.assign({}, btn(C.col), (!selectedRegistryPatient || !registryReportModality || !registryReportRegion) ? {opacity:.55,cursor:"not-allowed"} : {})} disabled={!selectedRegistryPatient || !registryReportModality || !registryReportRegion} onClick={function(){ launchRegistryPatientIntoReport(selectedRegistryPatient); }}>
+              Continue to Report →
+            </button>
+          </div>
+          <div style={{padding:"0 20px 18px",fontSize:12,color:C.soft}}>
+            Workflow: register/select patient, choose modality and region, then continue directly into that report's patient page with the registry details already filled.
+          </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.05fr) minmax(360px,.95fr)",gap:16,alignItems:"start"}}>
           <div style={crd}>
@@ -7444,8 +7525,9 @@ function RadReport() {
               <div style={{display:"grid",gap:10}}>
                 {filteredRegistryPatients.map(function(item) {
                   var active = selectedRegistryPatient && selectedRegistryPatient.id === item.id;
+                  var readyForReport = !!(registryReportModality && registryReportRegion);
                   return (
-                    <div key={item.id} style={{border:"1px solid "+(active ? "#93C5FD" : C.bdr),borderRadius:12,padding:"12px 14px",background:active ? "#EFF6FF" : "#fff"}}>
+                    <div key={item.id} onClick={function(){ setSelectedRegistryPatientId(item.id); }} style={{border:"1px solid "+(active ? "#93C5FD" : C.bdr),borderRadius:12,padding:"12px 14px",background:active ? "#EFF6FF" : "#fff",cursor:"pointer"}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
                         <div>
                           <div style={{fontWeight:800,color:C.navy,fontSize:14}}>{composeRegisteredPatientName(item) || "Unnamed patient"}</div>
@@ -7454,9 +7536,9 @@ function RadReport() {
                         <span style={{fontSize:10,padding:"3px 8px",borderRadius:20,background:"#F8FAFC",color:"#475569"}}>{item.age || "Age n/a"}</span>
                       </div>
                       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
-                        <button style={btn(C.col, "#fff", {padding:"6px 10px",fontSize:11})} onClick={function(){ applyRegistryPatientToStudy(item, "patient"); }}>Use in Report</button>
-                        <button style={obtn(C.col)} onClick={function(){ setSelectedRegistryPatientId(item.id); setPatientRegistryForm(Object.assign({}, item)); }}>Edit</button>
-                        <button style={obtn(C.err)} onClick={function(){ deleteRegistryPatient(item.id); }}>Delete</button>
+                        <button style={Object.assign({}, btn(C.col, "#fff", {padding:"6px 10px",fontSize:11}), !readyForReport ? {opacity:.55,cursor:"not-allowed"} : {})} disabled={!readyForReport} onClick={function(e){ e.stopPropagation(); setSelectedRegistryPatientId(item.id); launchRegistryPatientIntoReport(item); }}>Continue to Report</button>
+                        <button style={obtn(C.col)} onClick={function(e){ e.stopPropagation(); setSelectedRegistryPatientId(item.id); setPatientRegistryForm(Object.assign({}, item)); }}>Edit</button>
+                        <button style={obtn(C.err)} onClick={function(e){ e.stopPropagation(); deleteRegistryPatient(item.id); }}>Delete</button>
                       </div>
                     </div>
                   );
@@ -7496,6 +7578,7 @@ function RadReport() {
               </div>
               <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:14}}>
                 <button style={btn(C.col)} onClick={function(){ saveRegistryPatient(); }}>Save Patient</button>
+                <button style={Object.assign({}, btn("#0F766E"), (!registryReportModality || !registryReportRegion) ? {opacity:.55,cursor:"not-allowed"} : {})} disabled={!registryReportModality || !registryReportRegion} onClick={saveRegistryPatientAndContinue}>Save & Continue to Report</button>
                 <button style={obtn(C.soft)} onClick={function(){ setSelectedRegistryPatientId(null); setPatientRegistryField("reset", ""); }}>Reset</button>
                 {selectedRegistryPatientId && <button style={obtn(C.err)} onClick={function(){ deleteRegistryPatient(selectedRegistryPatientId); }}>Delete Current</button>}
               </div>
