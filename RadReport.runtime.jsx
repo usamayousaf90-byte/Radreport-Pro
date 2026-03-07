@@ -3314,7 +3314,13 @@ function DoctorDirectoryDrawer({
 
         {activeTab === "list" && (
           <div>
-            <div style={{fontSize:12,color:"rgba(226,232,240,.6)",marginBottom:12}}>{doctors.length} saved doctor{doctors.length === 1 ? "" : "s"}</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
+              <div style={{fontSize:12,color:"rgba(226,232,240,.6)"}}>{doctors.length} saved doctor{doctors.length === 1 ? "" : "s"}</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <button type="button" style={secondaryButton} onClick={function(){ onTabChange("add"); }}>Add Doctor</button>
+                <button type="button" style={secondaryButton} onClick={function(){ onTabChange("delete"); }}>Delete Doctor</button>
+              </div>
+            </div>
             {doctors.length ? doctors.map(function(doctor) {
               return (
                 <div key={doctor.name} style={{padding:"14px 15px",borderRadius:14,background:"rgba(15,23,42,.5)",border:"1px solid rgba(148,163,184,.16)",marginBottom:10}}>
@@ -6474,7 +6480,66 @@ function RadReport() {
     if (aRegion !== bRegion) return aRegion.localeCompare(bRegion);
     return composeRegisteredPatientName(a).localeCompare(composeRegisteredPatientName(b));
   });
+  var buildReportingStudyKey = function(rawPatient, rawModality, rawRegion, rawDate) {
+    var patientRef = rawPatient && typeof rawPatient === "object" ? rawPatient : {};
+    var patientKey = String(patientRef.registryPatientId || patientRef.id || patientRef.mrno || "").trim().toLowerCase();
+    if (!patientKey) {
+      patientKey = [
+        composeRegisteredPatientName(patientRef) || patientRef.name || "",
+        patientRef.cell || "",
+        patientRef.cnic || ""
+      ].join("|").toLowerCase().replace(/\s+/g, " ").trim();
+    }
+    var modalityKey = normalizeTemplateModality(rawModality || patientRef.requestedModality || "");
+    var regionKey = matchRegionForModality(modalityKey, rawRegion || patientRef.requestedRegion || "");
+    var dateKey = String(rawDate || patientRef.studyDate || "").trim();
+    if (!patientKey || !modalityKey || !regionKey || !dateKey) return "";
+    return [patientKey, modalityKey.toLowerCase(), String(regionKey).toLowerCase(), dateKey].join("__");
+  };
+  var reportingStudyStatusMap = {};
+  savedRecords.forEach(function(record) {
+    var recordKey = buildReportingStudyKey(record && record.patient, record && record.modality, record && record.region, getRecordDateISO(record));
+    if (!recordKey) return;
+    reportingStudyStatusMap[recordKey] = {
+      label: "Reported",
+      color: "#166534",
+      background: "#ECFDF5",
+      border: "#86EFAC",
+      detail: "Finalized on " + formatRecordListDate(record)
+    };
+  });
+  savedReports.forEach(function(draft) {
+    var draftKey = buildReportingStudyKey(draft && draft.patient, draft && draft.modality, draft && draft.region, draft && draft.patient && draft.patient.studyDate);
+    if (!draftKey || reportingStudyStatusMap[draftKey]) return;
+    reportingStudyStatusMap[draftKey] = {
+      label: "Incomplete",
+      color: "#9A3412",
+      background: "#FFF7ED",
+      border: "#FDBA74",
+      detail: "Draft saved" + (draft && draft.savedAt ? " on " + new Date(draft.savedAt).toLocaleString() : "")
+    };
+  });
+  var getReportingStudyStatus = function(rawPatient, rawModality, rawRegion, rawDate) {
+    var key = buildReportingStudyKey(rawPatient, rawModality, rawRegion, rawDate);
+    return key && reportingStudyStatusMap[key]
+      ? reportingStudyStatusMap[key]
+      : {
+          label: "Pending",
+          color: "#475569",
+          background: "#F8FAFC",
+          border: "#CBD5E1",
+          detail: "Not finalized yet"
+        };
+  };
   var selectedReportingPatient = filteredReportingPatients.find(function(item) { return item.id === selectedReportingPatientId; }) || filteredReportingPatients[0] || null;
+  var selectedReportingStatus = selectedReportingPatient
+    ? getReportingStudyStatus(
+        selectedReportingPatient,
+        reportingModality,
+        reportingRegion || selectedReportingPatient.requestedRegion || "",
+        reportingDate || selectedReportingPatient.studyDate || ""
+      )
+    : null;
   var recordQ = recordQuery.trim().toLowerCase();
   var filteredRecords = savedRecords.filter(function(record) {
     var recordDate = getRecordDateISO(record);
@@ -6737,7 +6802,6 @@ function RadReport() {
             <button style={obtn("#fff")} onClick={function(){ openReportingHub("home"); }}>Reporting</button>
             <button style={obtn("#fff")} onClick={function(){ openRecords("home"); }}>Record Book</button>
             <button style={obtn("#38BDF8")} onClick={function(){ openDoctorPanel("list"); }}>Doctor Directory</button>
-            <button style={btn("linear-gradient(135deg,#0EA5E9,#38BDF8)", "#03111F")} onClick={function(){ openDoctorPanel("add"); }}>+ Add Doctor</button>
           </div>
         </div>
 
@@ -7167,6 +7231,7 @@ function RadReport() {
                 {filteredReportingPatients.map(function(item) {
                   var active = selectedReportingPatient && selectedReportingPatient.id === item.id;
                   var suggestedRegion = matchRegionForModality(reportingModality, item.requestedRegion || "");
+                  var queueStatus = getReportingStudyStatus(item, reportingModality, suggestedRegion || item.requestedRegion || "", item.studyDate || reportingDate || "");
                   return (
                     <div key={item.id} onClick={function(){
                       setSelectedReportingPatientId(item.id);
@@ -7177,8 +7242,12 @@ function RadReport() {
                           <div style={{fontWeight:800,color:C.navy,fontSize:14}}>{composeRegisteredPatientName(item) || "Unnamed patient"}</div>
                           <div style={{fontSize:11,color:C.soft,marginTop:3}}>MRNO: {item.mrno || "—"} · {item.gender || "—"} · {item.cell || "—"}</div>
                           <div style={{fontSize:11,color:C.soft,marginTop:4}}>Requested: {item.requestedRegion || "Region n/a"}</div>
+                          <div style={{fontSize:11,color:C.soft,marginTop:6}}>{queueStatus.detail}</div>
                         </div>
-                        <span style={{fontSize:10,padding:"3px 8px",borderRadius:20,background:"#F8FAFC",color:"#475569"}}>{item.age || "Age n/a"}</span>
+                        <div style={{display:"grid",gap:6,justifyItems:"end"}}>
+                          <span style={{fontSize:10,padding:"3px 8px",borderRadius:20,background:"#F8FAFC",color:"#475569"}}>{item.age || "Age n/a"}</span>
+                          <span style={{fontSize:10,padding:"4px 9px",borderRadius:999,background:queueStatus.background,border:"1px solid "+queueStatus.border,color:queueStatus.color,fontWeight:800}}>{queueStatus.label}</span>
+                        </div>
                       </div>
                     </div>
                   );
@@ -7201,6 +7270,7 @@ function RadReport() {
                       <span style={{fontSize:11,padding:"4px 9px",borderRadius:999,background:"#F0F4FF",color:"#334155"}}>{selectedReportingPatient.mrno || "MRNO n/a"}</span>
                       <span style={{fontSize:11,padding:"4px 9px",borderRadius:999,background:"#F8FAFC",color:"#475569"}}>{selectedReportingPatient.cell || "Cell n/a"}</span>
                       <span style={{fontSize:11,padding:"4px 9px",borderRadius:999,background:"#ECFDF5",color:"#166534"}}>{reportingModality || "Select modality"}</span>
+                      {selectedReportingStatus && <span style={{fontSize:11,padding:"4px 9px",borderRadius:999,background:selectedReportingStatus.background,border:"1px solid "+selectedReportingStatus.border,color:selectedReportingStatus.color,fontWeight:800}}>{selectedReportingStatus.label}</span>}
                     </div>
                     <div style={{display:"grid",gap:12,marginTop:16}}>
                       <div>
@@ -7220,6 +7290,11 @@ function RadReport() {
                     <div style={{fontSize:11,color:C.soft,marginTop:12}}>
                       Registered request: {selectedReportingPatient.requestedModality || "—"} / {selectedReportingPatient.requestedRegion || "—"}
                     </div>
+                    {selectedReportingStatus && (
+                      <div style={{fontSize:11,color:C.soft,marginTop:8}}>
+                        Study status: {selectedReportingStatus.detail}
+                      </div>
+                    )}
                     <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:16}}>
                       <button style={Object.assign({}, btn(C.col), (!reportingModality || !reportingRegion) ? {opacity:.55,cursor:"not-allowed"} : {})} disabled={!reportingModality || !reportingRegion} onClick={function(){ launchPatientIntoReport(selectedReportingPatient, reportingModality, reportingRegion); }}>Open Report Editor</button>
                       <button style={obtn(C.col)} onClick={function(){ openPatientRegistry("reporting"); }}>Back to Registry</button>
@@ -7232,7 +7307,7 @@ function RadReport() {
             <div style={crd}>
               <div style={cHd(C.ok)}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Queue Notes</span></div>
               <div style={{padding:20,fontSize:12,color:C.soft,lineHeight:1.7}}>
-                Use this page only for report selection. Registration happens in the Patient Registry. The queue here shows only patients registered for the selected date and modality, and region choices are limited to the chosen modality.
+                Use this page only for report selection. Registration happens in the Patient Registry. The queue here shows only patients registered for the selected date and modality, region choices are limited to the chosen modality, and each patient is tagged as Pending, Incomplete, or Reported.
               </div>
             </div>
           </div>
@@ -7378,7 +7453,7 @@ function RadReport() {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:12}}>
             <div>
               <div style={{fontWeight:800,fontSize:14,color:C.navy}}>Doctors for This Report</div>
-              <div style={{fontSize:11,color:C.soft,marginTop:3}}>Choose who performed the scan and who will finalize the report. Add or delete doctors from the first home page only.</div>
+              <div style={{fontSize:11,color:C.soft,marginTop:3}}>Choose who performed the scan and who will finalize the report. Manage the doctor list from the Doctor Directory on the home page.</div>
             </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14}}>
