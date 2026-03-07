@@ -4063,6 +4063,7 @@ function makeEmptyRegistryPatient() {
   return {
     id: "",
     mrno: "",
+    receiptNo: "",
     title: "",
     firstName: "",
     lastName: "",
@@ -4082,6 +4083,12 @@ function makeEmptyRegistryPatient() {
     studyDate: getTodayISO(),
     requestedModality: "",
     requestedRegion: "",
+    studyFee: "",
+    discountAmount: "",
+    paidAmount: "",
+    paymentMethod: "Cash",
+    paymentStatus: "",
+    paymentNotes: "",
     portalUsername: "",
     portalPassword: ""
   };
@@ -4107,6 +4114,62 @@ function calculateAgeTextFromDOB(dob) {
   if (months < 0 || (months === 0 && today.getDate() < birth.getDate())) years -= 1;
   if (years < 0) years = 0;
   return years + " yrs";
+}
+
+function normalizeMoneyInput(value) {
+  var raw = String(value == null ? "" : value).replace(/[^0-9.]+/g, "");
+  if (!raw) return "";
+  var parts = raw.split(".");
+  if (parts.length > 2) raw = parts.shift() + "." + parts.join("");
+  return raw;
+}
+
+function parseMoneyValue(value) {
+  var raw = normalizeMoneyInput(value);
+  if (!raw) return 0;
+  var parsed = parseFloat(raw);
+  return isFinite(parsed) ? parsed : 0;
+}
+
+function formatCurrencyAmount(value) {
+  var amount = Number(value || 0);
+  if (!isFinite(amount)) amount = 0;
+  var safe = Math.abs(amount - Math.round(amount)) < 0.001
+    ? amount.toFixed(0)
+    : amount.toFixed(2);
+  var parts = safe.split(".");
+  parts[0] = Number(parts[0] || 0).toLocaleString();
+  return "PKR " + (parts[1] ? parts.join(".") : parts[0]);
+}
+
+function calculateRegistryPaymentSummary(patientLike) {
+  var fee = parseMoneyValue(patientLike && patientLike.studyFee);
+  var discount = parseMoneyValue(patientLike && patientLike.discountAmount);
+  if (discount > fee) discount = fee;
+  var net = Math.max(0, Number((fee - discount).toFixed(2)));
+  var paid = parseMoneyValue(patientLike && patientLike.paidAmount);
+  var balance = Math.max(0, Number((net - paid).toFixed(2)));
+  var status = net <= 0 ? "Complimentary" : paid <= 0 ? "Unpaid" : balance <= 0 ? "Paid" : "Partial";
+  return {
+    fee: fee,
+    discount: discount,
+    net: net,
+    paid: paid,
+    balance: balance,
+    status: status
+  };
+}
+
+function buildSequentialReceiptNo(studyDate, existingPatients, currentId) {
+  var month = String(studyDate || getTodayISO()).slice(0, 7).replace(/-/g, "");
+  var count = 0;
+  (Array.isArray(existingPatients) ? existingPatients : []).forEach(function(item) {
+    if (!item) return;
+    if (currentId && item.id === currentId) return;
+    var itemMonth = String(item.studyDate || "").slice(0, 7).replace(/-/g, "");
+    if (itemMonth === month) count += 1;
+  });
+  return "RCT-" + (month || new Date().toISOString().slice(0, 7).replace(/-/g, "")) + "-" + String(count + 1).padStart(4, "0");
 }
 
 function normalizeTemplateModality(rawModality) {
@@ -4159,20 +4222,30 @@ function normalizeRegistryPatient(rawPatient) {
   normalized.studyDate = String(normalized.studyDate || source.StudyDate || source.VisitDate || source.Date || getTodayISO()).trim() || getTodayISO();
   normalized.requestedModality = normalizeTemplateModality(normalized.requestedModality || source.RequestedModality || source.Modality || source.StudyModality || "");
   normalized.requestedRegion = matchRegionForModality(normalized.requestedModality, normalized.requestedRegion || source.RequestedRegion || source.Region || source.StudyRegion || "");
+  normalized.receiptNo = String(normalized.receiptNo || source.ReceiptNo || source.ReceiptNumber || "").trim();
+  normalized.studyFee = normalizeMoneyInput(normalized.studyFee || source.StudyFee || source.Fee || source.Amount || source.TotalAmount || "");
+  normalized.discountAmount = normalizeMoneyInput(normalized.discountAmount || source.DiscountAmount || source.Discount || "");
+  normalized.paidAmount = normalizeMoneyInput(normalized.paidAmount || source.PaidAmount || source.Paid || source.ReceivedAmount || "");
+  normalized.paymentMethod = String(normalized.paymentMethod || source.PaymentMethod || source.PaymentMode || "Cash").trim() || "Cash";
+  normalized.paymentNotes = String(normalized.paymentNotes || source.PaymentNotes || source.ReceiptNotes || "").trim();
   normalized.portalUsername = normalizePortalUsername(normalized.portalUsername || source.PortalUsername || source.PatientPortalUsername || "");
   normalized.portalPassword = String(normalized.portalPassword || source.PortalPassword || source.PatientPortalPassword || "").trim();
   normalized.id = String(normalized.id || source.PatientId || source.RegID || source.PatID || makePatientRegistryId(normalized)).trim();
   normalized.name = composeRegisteredPatientName(normalized);
+  normalized.paymentStatus = String(normalized.paymentStatus || source.PaymentStatus || "").trim();
   if (!normalized.age && normalized.dob) normalized.age = calculateAgeTextFromDOB(normalized.dob);
+  if (!normalized.paymentStatus) normalized.paymentStatus = calculateRegistryPaymentSummary(normalized).status;
   return normalized;
 }
 
 function prepareRegistryPatientForSave(rawPatient, existingPatients) {
   var regPatient = normalizeRegistryPatient(rawPatient);
   if (!regPatient.mrno) regPatient.mrno = buildSequentialMrno(regPatient.studyDate, existingPatients, regPatient.id);
+  if (!regPatient.receiptNo) regPatient.receiptNo = buildSequentialReceiptNo(regPatient.studyDate, existingPatients, regPatient.id);
   if (!regPatient.portalUsername) regPatient.portalUsername = buildPortalUsername(regPatient, existingPatients, regPatient.id);
   if (!regPatient.portalPassword) regPatient.portalPassword = buildPortalPassword();
   regPatient.name = composeRegisteredPatientName(regPatient);
+  regPatient.paymentStatus = calculateRegistryPaymentSummary(regPatient).status;
   if (!regPatient.id) regPatient.id = makePatientRegistryId(regPatient);
   return regPatient;
 }
@@ -6956,6 +7029,50 @@ function RadReport() {
       } catch (e) {}
     }, 250);
     showToast("Portal slip ready to print", "success");
+  }, [patientRegistryForm, saveRegistryPatient, showToast]);
+
+  var printRegistryReceipt = useCallback(function(rawPatient) {
+    var savedPatient = saveRegistryPatient(rawPatient || patientRegistryForm, true);
+    if (!savedPatient) return;
+    var payment = calculateRegistryPaymentSummary(savedPatient);
+    var popup = window.open("", "_blank", "width=940,height=760");
+    if (!popup) {
+      showToast("Allow pop-ups to print the payment receipt", "error");
+      return;
+    }
+    var patientName = composeRegisteredPatientName(savedPatient) || "—";
+    var modalityLabel = savedPatient.requestedModality || "—";
+    var regionLabel = savedPatient.requestedRegion || "";
+    var studyLabel = regionLabel ? (modalityLabel + " / " + regionLabel) : modalityLabel;
+    popup.document.write(
+      "<!doctype html><html><head><meta charset=\"utf-8\"><title>Patient Payment Receipt</title>" +
+      "<style>body{font-family:Arial,sans-serif;background:linear-gradient(180deg,#eef6ff 0%,#f8fafc 100%);margin:0;padding:28px;color:#0f172a}.sheet{max-width:860px;margin:0 auto;background:#fff;border:1px solid #dbeafe;border-radius:24px;overflow:hidden;box-shadow:0 24px 60px rgba(15,23,42,.12)}.hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;padding:26px 30px;background:linear-gradient(135deg,#0d2137 0%,#1e3a5f 56%,#0ea5e9 100%);color:#fff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;background:rgba(255,255,255,.12);border:1px solid rgba(191,219,254,.26);font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:#bfdbfe}.title{margin-top:14px;font-size:34px;font-weight:800;letter-spacing:-.4px}.sub{margin-top:8px;font-size:13px;line-height:1.7;color:rgba(255,255,255,.8)}.chip{display:inline-block;margin-top:16px;padding:10px 14px;border-radius:14px;background:rgba(255,255,255,.12);border:1px solid rgba(191,219,254,.22);font-size:13px;color:#e2e8f0}.status{align-self:start;padding:10px 14px;border-radius:16px;background:rgba(255,255,255,.12);border:1px solid rgba(191,219,254,.24);font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase}.body{padding:26px 30px 30px}.grid{display:grid;grid-template-columns:minmax(0,1.04fr) minmax(0,.96fr);gap:18px}.card{border:1px solid #dbeafe;border-radius:18px;padding:18px 18px 16px;background:#fff}.cardAccent{background:linear-gradient(180deg,#eff6ff 0%,#ffffff 100%)}.cardTitle{font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:#1d4ed8;margin-bottom:12px}.patientName{font-size:24px;font-weight:800;color:#0f172a;line-height:1.2;margin-bottom:12px}.metaRow{display:grid;grid-template-columns:160px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid #e2e8f0}.metaRow:last-child{border-bottom:none;padding-bottom:0}.metaLabel{font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#64748b}.metaValue{font-size:15px;font-weight:600;color:#0f172a;word-break:break-word}.moneyGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.moneyCard{border:1px solid #dbeafe;border-radius:16px;padding:14px 16px;background:#f8fbff}.moneyLabel{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#64748b}.moneyValue{margin-top:8px;font-size:20px;font-weight:900;color:#0f172a}.moneyAccent{background:linear-gradient(135deg,#0f172a,#1d4ed8);color:#fff;border-color:#1d4ed8}.moneyAccent .moneyLabel,.moneyAccent .moneyValue{color:#fff}.notes{margin-top:16px;padding:14px 16px;border-radius:16px;background:#f8fafc;border:1px solid #e2e8f0;font-size:12px;line-height:1.8;color:#334155;white-space:pre-wrap}.footer{margin-top:20px;padding:14px 16px;border-radius:16px;background:#0f172a;color:#cbd5e1;font-size:12px;line-height:1.8}.footer b{color:#fff}@media print{body{padding:12px;background:#fff}.sheet{box-shadow:none}}</style></head><body>" +
+      "<div class=\"sheet\"><div class=\"hero\"><div><div class=\"tag\">Patient Payment Receipt</div><div class=\"title\">RadReport Pro</div><div class=\"sub\">Registration and payment summary for the current patient study.</div><div class=\"chip\">Receipt No: <b>" + escapeHtml(savedPatient.receiptNo || "—") + "</b></div><div class=\"chip\" style=\"margin-left:10px\">MRNO: <b>" + escapeHtml(savedPatient.mrno || "—") + "</b></div></div><div class=\"status\">" + escapeHtml(payment.status) + "</div></div>" +
+      "<div class=\"body\"><div class=\"grid\"><div class=\"card\"><div class=\"cardTitle\">Patient Details</div><div class=\"patientName\">" + escapeHtml(patientName) + "</div>" +
+      "<div class=\"metaRow\"><div class=\"metaLabel\">Father / Husband</div><div class=\"metaValue\">" + escapeHtml(savedPatient.fatherName || "—") + "</div></div>" +
+      "<div class=\"metaRow\"><div class=\"metaLabel\">Study Date</div><div class=\"metaValue\">" + escapeHtml(savedPatient.studyDate || "—") + "</div></div>" +
+      "<div class=\"metaRow\"><div class=\"metaLabel\">Study</div><div class=\"metaValue\">" + escapeHtml(studyLabel || "—") + "</div></div>" +
+      "<div class=\"metaRow\"><div class=\"metaLabel\">Mobile</div><div class=\"metaValue\">" + escapeHtml(savedPatient.cell || "—") + "</div></div>" +
+      "<div class=\"metaRow\"><div class=\"metaLabel\">Referral</div><div class=\"metaValue\">" + escapeHtml(savedPatient.refBy || "—") + "</div></div></div>" +
+      "<div class=\"card cardAccent\"><div class=\"cardTitle\">Payment Details</div><div class=\"moneyGrid\">" +
+      "<div class=\"moneyCard\"><div class=\"moneyLabel\">Study Fee</div><div class=\"moneyValue\">" + escapeHtml(formatCurrencyAmount(payment.fee)) + "</div></div>" +
+      "<div class=\"moneyCard\"><div class=\"moneyLabel\">Discount</div><div class=\"moneyValue\">" + escapeHtml(formatCurrencyAmount(payment.discount)) + "</div></div>" +
+      "<div class=\"moneyCard moneyAccent\"><div class=\"moneyLabel\">Net Amount</div><div class=\"moneyValue\">" + escapeHtml(formatCurrencyAmount(payment.net)) + "</div></div>" +
+      "<div class=\"moneyCard\"><div class=\"moneyLabel\">Paid Amount</div><div class=\"moneyValue\">" + escapeHtml(formatCurrencyAmount(payment.paid)) + "</div></div>" +
+      "<div class=\"moneyCard\"><div class=\"moneyLabel\">Balance</div><div class=\"moneyValue\">" + escapeHtml(formatCurrencyAmount(payment.balance)) + "</div></div>" +
+      "<div class=\"moneyCard\"><div class=\"moneyLabel\">Payment Method</div><div class=\"moneyValue\" style=\"font-size:18px\">" + escapeHtml(savedPatient.paymentMethod || "Cash") + "</div></div>" +
+      "</div>" +
+      (savedPatient.paymentNotes ? "<div class=\"notes\"><b>Notes:</b><br>" + escapeHtml(savedPatient.paymentNotes) + "</div>" : "") +
+      "</div></div><div class=\"footer\"><b>Receipt Status:</b> " + escapeHtml(payment.status) + ". Please keep this receipt with the patient file for billing and reporting reference.</div></div></div></body></html>"
+    );
+    popup.document.close();
+    setTimeout(function() {
+      try {
+        popup.focus();
+        popup.print();
+      } catch (e) {}
+    }, 250);
+    showToast("Payment receipt ready to print", "success");
   }, [patientRegistryForm, saveRegistryPatient, showToast]);
 
   var resetPatientPortalPassword = useCallback(async function(rawPatient) {
@@ -10593,6 +10710,7 @@ function RadReport() {
               <div style={{display:"grid",gap:10}}>
                 {filteredRegistryPatients.map(function(item) {
                   var active = selectedRegistryPatient && selectedRegistryPatient.id === item.id;
+                  var paymentInfo = calculateRegistryPaymentSummary(item);
                   return (
                     <div key={item.id} onClick={function(){ setSelectedRegistryPatientId(item.id); }} style={{border:"1px solid "+(active ? "#93C5FD" : C.bdr),borderRadius:12,padding:"12px 14px",background:active ? "#EFF6FF" : "#fff",cursor:"pointer"}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
@@ -10600,11 +10718,16 @@ function RadReport() {
                           <div style={{fontWeight:800,color:C.navy,fontSize:14}}>{composeRegisteredPatientName(item) || "Unnamed patient"}</div>
                           <div style={{fontSize:11,color:C.soft,marginTop:3}}>MRNO: {item.mrno || "—"} · {item.gender || "—"} · {item.cell || "—"}</div>
                           <div style={{fontSize:11,color:C.soft,marginTop:4}}>{item.studyDate || "—"} · {item.requestedModality || "Modality n/a"} · {item.requestedRegion || "Region n/a"}</div>
+                          <div style={{fontSize:11,color:C.soft,marginTop:4}}>Receipt: {item.receiptNo || "Auto on save"} · {paymentInfo.status} · {formatCurrencyAmount(paymentInfo.net)}</div>
                         </div>
-                        <span style={{fontSize:10,padding:"3px 8px",borderRadius:20,background:"#F8FAFC",color:"#475569"}}>{item.age || "Age n/a"}</span>
+                        <div style={{display:"grid",gap:6,justifyItems:"end"}}>
+                          <span style={{fontSize:10,padding:"3px 8px",borderRadius:20,background:"#F8FAFC",color:"#475569"}}>{item.age || "Age n/a"}</span>
+                          <span style={{fontSize:10,padding:"3px 8px",borderRadius:20,background:paymentInfo.status === "Paid" ? "#DCFCE7" : paymentInfo.status === "Partial" ? "#FEF3C7" : paymentInfo.status === "Complimentary" ? "#DBEAFE" : "#FEE2E2",color:paymentInfo.status === "Paid" ? "#166534" : paymentInfo.status === "Partial" ? "#92400E" : paymentInfo.status === "Complimentary" ? "#1D4ED8" : "#991B1B"}}>{paymentInfo.status}</span>
+                        </div>
                       </div>
                       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
                         <button style={obtn(C.col)} onClick={function(e){ e.stopPropagation(); setSelectedRegistryPatientId(item.id); setPatientRegistryForm(Object.assign({}, item)); }}>Edit</button>
+                        <button style={obtn("#1D4ED8")} onClick={function(e){ e.stopPropagation(); printRegistryReceipt(item); }}>Receipt</button>
                         <button style={obtn(C.err)} onClick={function(e){ e.stopPropagation(); deleteRegistryPatient(item.id); }}>Delete</button>
                       </div>
                     </div>
@@ -10665,9 +10788,45 @@ function RadReport() {
                 <div><label style={lbl}>Referral</label><input className="ri" style={inp()} value={patientRegistryForm.refBy || ""} onChange={function(e){ setPatientRegistryField("refBy", e.target.value); }} placeholder="Dr. Name / Dept" /></div>
                 <div><label style={lbl}>Default Panel</label><input className="ri" style={inp()} value={patientRegistryForm.defaultPanel} onChange={function(e){ setPatientRegistryField("defaultPanel", e.target.value); }} placeholder="Default panel" /></div>
                 <div style={{gridColumn:"1/-1"}}><label style={lbl}>Address</label><textarea className="ri" style={ta({minHeight:74})} value={patientRegistryForm.address} onChange={function(e){ setPatientRegistryField("address", e.target.value); }} placeholder="Address" /></div>
+                <div style={{gridColumn:"1/-1",marginTop:6,padding:"14px 14px 4px",border:"1px solid #BFDBFE",borderRadius:14,background:"#F8FBFF"}}>
+                  <div style={{fontSize:11,fontWeight:800,color:"#1D4ED8",letterSpacing:1.2,textTransform:"uppercase",marginBottom:12}}>Payment Section</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10}}>
+                    <div>
+                      <label style={lbl}>Receipt No</label>
+                      <div style={{display:"flex",gap:8}}>
+                        <input className="ri" style={inp()} value={patientRegistryForm.receiptNo || ""} onChange={function(e){ setPatientRegistryField("receiptNo", e.target.value); }} placeholder="Auto-generated on save" />
+                        <button type="button" style={obtn(C.col)} onClick={function(){
+                          setPatientRegistryField("receiptNo", buildSequentialReceiptNo(patientRegistryForm.studyDate || getTodayISO(), savedPatients, selectedRegistryPatientId || patientRegistryForm.id || null));
+                        }}>Auto</button>
+                      </div>
+                    </div>
+                    <div><label style={lbl}>Study Fee</label><input className="ri" style={inp()} value={patientRegistryForm.studyFee || ""} onChange={function(e){ setPatientRegistryField("studyFee", normalizeMoneyInput(e.target.value)); }} placeholder="e.g. 2500" /></div>
+                    <div><label style={lbl}>Discount</label><input className="ri" style={inp()} value={patientRegistryForm.discountAmount || ""} onChange={function(e){ setPatientRegistryField("discountAmount", normalizeMoneyInput(e.target.value)); }} placeholder="e.g. 200" /></div>
+                    <div><label style={lbl}>Amount Paid</label><input className="ri" style={inp()} value={patientRegistryForm.paidAmount || ""} onChange={function(e){ setPatientRegistryField("paidAmount", normalizeMoneyInput(e.target.value)); }} placeholder="e.g. 2300" /></div>
+                    <div><label style={lbl}>Payment Method</label><select className="ri" style={inp({cursor:"pointer"})} value={patientRegistryForm.paymentMethod || "Cash"} onChange={function(e){ setPatientRegistryField("paymentMethod", e.target.value); }}><option>Cash</option><option>Card</option><option>Online Transfer</option><option>Panel / Credit</option><option>Complimentary</option></select></div>
+                    <div style={{gridColumn:"1/-1"}}><label style={lbl}>Payment Notes</label><textarea className="ri" style={ta({minHeight:68})} value={patientRegistryForm.paymentNotes || ""} onChange={function(e){ setPatientRegistryField("paymentNotes", e.target.value); }} placeholder="Optional payment remarks" /></div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginTop:12}}>
+                    {(function(summary){
+                      return [
+                        ["Status", summary.status],
+                        ["Net Amount", formatCurrencyAmount(summary.net)],
+                        ["Balance", formatCurrencyAmount(summary.balance)]
+                      ].map(function(entry){
+                        return (
+                          <div key={entry[0]} style={{padding:"10px 12px",borderRadius:12,background:"#fff",border:"1px solid #DBEAFE"}}>
+                            <div style={{fontSize:10,fontWeight:800,color:C.soft,letterSpacing:.9,textTransform:"uppercase"}}>{entry[0]}</div>
+                            <div style={{marginTop:6,fontSize:15,fontWeight:800,color:C.navy}}>{entry[1]}</div>
+                          </div>
+                        );
+                      });
+                    })(calculateRegistryPaymentSummary(patientRegistryForm))}
+                  </div>
+                </div>
               </div>
               <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:14}}>
                 <button style={btn(C.col)} onClick={function(){ saveRegistryPatient(); }}>Save Patient</button>
+                <button style={obtn("#1D4ED8")} onClick={function(){ printRegistryReceipt(); }}>Print Receipt</button>
                 <button style={obtn(C.ok)} onClick={function(){ printPatientPortalSlip(); }}>Print Portal Slip</button>
                 <button style={Object.assign({}, obtn(C.warn), !portalPreviewPatient ? {opacity:.55,cursor:"not-allowed"} : {})} disabled={!portalPreviewPatient} onClick={function(){ resetPatientPortalPassword(portalPreviewPatient || patientRegistryForm); }}>Reset Portal Password</button>
                 <button style={Object.assign({}, obtn(C.col), (!patientRegistryForm.requestedModality || !patientRegistryForm.requestedRegion) ? {opacity:.55,cursor:"not-allowed"} : {})} disabled={!patientRegistryForm.requestedModality || !patientRegistryForm.requestedRegion} onClick={function(){
