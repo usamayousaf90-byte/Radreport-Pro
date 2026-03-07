@@ -8131,11 +8131,6 @@ function RadReport() {
         <label style={lbl}>Password</label>
         <input type="password" className="ri" style={inp({marginBottom:14})} value={loginForm.password} onChange={function(e){setLoginForm(function(p){ return Object.assign({}, p, { password: e.target.value }); });}} placeholder="••••••••" />
         <button style={btn("#0D2137")} onClick={doLogin}>Sign In</button>
-        <div style={{marginTop:12,fontSize:11,color:"#7a8ea8",lineHeight:1.7}}>
-          Default accounts:<br/>
-          <code>admin / admin123</code> · <code>radiologist / rad123</code><br/>
-          <code>resident / res123</code> · <code>typist / type123</code>
-        </div>
       </div>
     </div>
   );
