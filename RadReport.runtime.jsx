@@ -6558,25 +6558,19 @@ function RadReport() {
       showToast("Allow pop-ups to print the portal slip", "error");
       return;
     }
-    var rows = [
-      ["Name", composeRegisteredPatientName(savedPatient) || "—"],
-      ["Father / Husband", savedPatient.fatherName || "—"],
-      ["Portal Username", savedPatient.portalUsername || "—"],
-      ["Portal Password", savedPatient.portalPassword || "—"],
-      ["Modality", savedPatient.requestedModality || "—"],
-      ["Age", savedPatient.age || "—"],
-      ["Mobile", savedPatient.cell || "—"],
-      ["Portal", portalUrl || "—"]
-    ];
+    var patientName = composeRegisteredPatientName(savedPatient) || "—";
+    var modalityLabel = savedPatient.requestedModality || "—";
+    var regionLabel = savedPatient.requestedRegion || "";
+    var modalityText = regionLabel ? (modalityLabel + " / " + regionLabel) : modalityLabel;
     popup.document.write(
       "<!doctype html><html><head><meta charset=\"utf-8\"><title>Patient Portal Slip</title>" +
-      "<style>body{font-family:Arial,sans-serif;background:#f8fafc;margin:0;padding:28px;color:#0f172a} .sheet{max-width:820px;margin:0 auto;background:#fff;border:1px solid #cbd5e1;border-radius:18px;padding:28px 32px;box-shadow:0 20px 50px rgba(15,23,42,.08)} .head{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;margin-bottom:24px} .title{font-size:30px;font-weight:700;color:#0d2137;margin-bottom:6px} .sub{font-size:12px;letter-spacing:1.4px;text-transform:uppercase;color:#64748b} table{width:100%;border-collapse:collapse;margin-top:10px} td{border-bottom:1px solid #e2e8f0;padding:11px 0;font-size:14px;vertical-align:top} td:first-child{width:190px;font-size:12px;font-weight:700;text-transform:uppercase;color:#475569;letter-spacing:.6px} .qr{text-align:center} .qr img{width:210px;height:210px;border:1px solid #cbd5e1;border-radius:14px;padding:12px;background:#fff} .note{margin-top:22px;font-size:12px;line-height:1.7;color:#475569}</style></head><body>" +
-      "<div class=\"sheet\"><div class=\"head\"><div><div class=\"title\">RadReport Pro</div><div class=\"sub\">Patient Portal Access Slip</div><div style=\"margin-top:12px;font-size:13px;color:#334155\">MRNO: <b>" + escapeHtml(savedPatient.mrno || "—") + "</b></div></div><div class=\"qr\"><img src=\"" + escapeHtml(qrUrl) + "\" alt=\"Portal QR code\"><div style=\"margin-top:10px;font-size:12px;color:#475569\">Scan to open the patient portal</div></div></div>" +
-      "<table><tbody>" +
-      rows.map(function(row) {
-        return "<tr><td>" + escapeHtml(row[0]) + "</td><td>" + escapeHtml(row[1]) + "</td></tr>";
-      }).join("") +
-      "</tbody></table><div class=\"note\">Use the printed portal username and password to open shared reports. Keep this slip with the patient documents.</div></div></body></html>"
+      "<style>body{font-family:Arial,sans-serif;background:linear-gradient(180deg,#edf5ff 0%,#f8fafc 100%);margin:0;padding:28px;color:#0f172a} .sheet{position:relative;max-width:860px;margin:0 auto;background:#fff;border:1px solid #cbd5e1;border-radius:24px;overflow:hidden;box-shadow:0 24px 60px rgba(15,23,42,.12)} .orb{position:absolute;border-radius:999px;pointer-events:none} .orb1{width:220px;height:220px;right:-80px;top:-70px;background:radial-gradient(circle,rgba(56,189,248,.28),rgba(56,189,248,0))} .orb2{width:180px;height:180px;left:-70px;bottom:-60px;background:radial-gradient(circle,rgba(59,130,246,.18),rgba(59,130,246,0))} .hero{position:relative;display:grid;grid-template-columns:minmax(0,1.15fr) 240px;gap:24px;padding:28px 30px;background:linear-gradient(135deg,#0d2137 0%,#1a3a5c 58%,#2563eb 100%)} .eyebrow{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;background:rgba(255,255,255,.1);border:1px solid rgba(191,219,254,.28);font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:#bfdbfe} .title{font-size:34px;font-weight:800;color:#fff;margin-top:14px;letter-spacing:-.4px} .sub{font-size:13px;line-height:1.7;color:rgba(255,255,255,.76);max-width:360px;margin-top:8px} .mrno{display:inline-block;margin-top:18px;padding:10px 14px;border-radius:14px;background:rgba(255,255,255,.12);border:1px solid rgba(191,219,254,.25);font-size:13px;color:#e2e8f0} .qrWrap{text-align:center;background:rgba(255,255,255,.08);border:1px solid rgba(191,219,254,.2);border-radius:20px;padding:16px} .qrWrap img{width:190px;height:190px;border-radius:18px;background:#fff;padding:12px;border:1px solid rgba(226,232,240,.8)} .qrNote{margin-top:10px;font-size:12px;line-height:1.6;color:rgba(255,255,255,.78)} .body{padding:26px 30px 30px} .grid{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(0,.98fr);gap:18px} .card{border:1px solid #dbeafe;border-radius:18px;padding:18px 18px 16px;background:#fff} .cardAccent{background:linear-gradient(180deg,#eff6ff 0%,#ffffff 100%);border-color:#bfdbfe} .cardTitle{font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:#1d4ed8;margin-bottom:12px} .patientName{font-size:24px;font-weight:800;color:#0f172a;line-height:1.2;margin-bottom:12px} .metaRow{display:grid;grid-template-columns:160px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid #e2e8f0} .metaRow:last-child{border-bottom:none;padding-bottom:0} .metaLabel{font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#64748b} .metaValue{font-size:15px;font-weight:600;color:#0f172a;word-break:break-word} .loginUser{display:inline-block;padding:10px 14px;border-radius:14px;background:#0d2137;color:#f8fafc;font-size:18px;font-weight:800;letter-spacing:.3px} .loginPass{display:inline-block;margin-top:10px;padding:12px 14px;border-radius:14px;background:linear-gradient(135deg,#22c55e,#0f766e);color:#f8fafc;font-size:20px;font-weight:900;letter-spacing:2.6px} .helper{margin-top:14px;font-size:12px;line-height:1.7;color:#475569} .portalBox{margin-top:16px;padding:12px 14px;border-radius:14px;background:#f8fafc;border:1px solid #e2e8f0;font-size:12px;color:#334155;line-height:1.7;word-break:break-word} .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:18px} .stat{border-radius:16px;padding:14px 16px;background:linear-gradient(180deg,#f8fbff 0%,#eef6ff 100%);border:1px solid #dbeafe} .statLabel{font-size:10px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;color:#64748b} .statValue{margin-top:8px;font-size:17px;font-weight:800;color:#0f172a;line-height:1.3} .footer{margin-top:18px;padding:14px 16px;border-radius:16px;background:#0f172a;color:#cbd5e1;font-size:12px;line-height:1.8} .footer b{color:#fff} @media print{body{padding:12px;background:#fff}.sheet{box-shadow:none;border-color:#cbd5e1}}</style></head><body>" +
+      "<div class=\"sheet\"><div class=\"orb orb1\"></div><div class=\"orb orb2\"></div>" +
+      "<div class=\"hero\"><div><div class=\"eyebrow\">Secure Patient Portal</div><div class=\"title\">RadReport Pro</div><div class=\"sub\">Patient access card for viewing finalized radiology reports securely through the portal.</div><div class=\"mrno\">MRNO: <b>" + escapeHtml(savedPatient.mrno || "—") + "</b></div></div><div class=\"qrWrap\"><img src=\"" + escapeHtml(qrUrl) + "\" alt=\"Portal QR code\"><div class=\"qrNote\">Scan to open the secure patient portal</div></div></div>" +
+      "<div class=\"body\"><div class=\"grid\"><div class=\"card\"><div class=\"cardTitle\">Patient Summary</div><div class=\"patientName\">" + escapeHtml(patientName) + "</div><div class=\"metaRow\"><div class=\"metaLabel\">Father / Husband</div><div class=\"metaValue\">" + escapeHtml(savedPatient.fatherName || "—") + "</div></div><div class=\"metaRow\"><div class=\"metaLabel\">Portal Link</div><div class=\"metaValue\">" + escapeHtml(portalUrl || "—") + "</div></div></div>" +
+      "<div class=\"card cardAccent\"><div class=\"cardTitle\">Portal Login</div><div class=\"metaLabel\" style=\"margin-bottom:8px\">Username</div><div class=\"loginUser\">" + escapeHtml(savedPatient.portalUsername || "—") + "</div><div class=\"metaLabel\" style=\"margin:16px 0 8px\">Password</div><div class=\"loginPass\">" + escapeHtml(savedPatient.portalPassword || "—") + "</div><div class=\"helper\">Give this slip only to the patient or attendant. These credentials are required even if they already have the report link.</div><div class=\"portalBox\"><b>Quick Access:</b><br>" + escapeHtml(portalUrl || "—") + "</div></div></div>" +
+      "<div class=\"stats\"><div class=\"stat\"><div class=\"statLabel\">Modality</div><div class=\"statValue\">" + escapeHtml(modalityText) + "</div></div><div class=\"stat\"><div class=\"statLabel\">Age</div><div class=\"statValue\">" + escapeHtml(savedPatient.age || "—") + "</div></div><div class=\"stat\"><div class=\"statLabel\">Mobile</div><div class=\"statValue\">" + escapeHtml(savedPatient.cell || "—") + "</div></div></div>" +
+      "<div class=\"footer\"><b>Patient Portal Note:</b> Use the QR code or portal link, then sign in with the username and password above. Keep this slip with the patient documents.</div></div></div></body></html>"
     );
     popup.document.close();
     setTimeout(function() {
@@ -7863,9 +7857,7 @@ function RadReport() {
           <div style={{fontFamily:"'DM Serif Display',serif",fontSize:22,color:"#fff"}}>RadReport Pro</div>
           <div style={{fontSize:11,color:"rgba(255,255,255,.5)",letterSpacing:2,textTransform:"uppercase"}}>Patient Portal</div>
         </div>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-          <button style={btn(C.col, "#fff")} onClick={exitSharedPortal}>Open App</button>
-        </div>
+        <div />
       </div>
       <div style={pg}>
         {!patientPortalState.authenticated && (
@@ -7888,7 +7880,6 @@ function RadReport() {
               <button style={btn(C.col)} onClick={handlePatientPortalLogin} disabled={patientPortalState.loading}>
                 {patientPortalState.loading ? "Signing In..." : "Open Patient Portal"}
               </button>
-              <button style={obtn(C.soft)} onClick={exitSharedPortal}>Back to App</button>
             </div>
             {!!patientPortalState.error && (
               <div style={{marginTop:14,padding:"10px 12px",borderRadius:10,border:"1px solid #FECACA",background:"#FEF2F2",color:"#991B1B",fontSize:13}}>
@@ -7968,7 +7959,6 @@ function RadReport() {
             <button style={obtn("#fff")} onClick={function(){ setStep("portal"); }}>Portal Home</button>
           )}
           {sharedPortalRecord && <button style={obtn("#fff")} onClick={function(){ window.print(); }}>Print / PDF</button>}
-          <button style={btn(C.col, "#fff")} onClick={exitSharedPortal}>Open App</button>
         </div>
       </div>
       <div style={pg}>
