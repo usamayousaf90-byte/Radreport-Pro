@@ -3208,12 +3208,17 @@ function AppHdr({ onBack, backTo, setStep, sub, right }) {
             ← Back
           </button>
         )}
-        <div>
+        <button onClick={function(){ setStep("home"); }} style={{background:"transparent",border:"none",padding:0,textAlign:"left",cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>
           <span style={{fontFamily:"'DM Serif Display',serif",fontSize:22,color:"#fff"}}>RadReport Pro</span>
           {sub && <span style={{fontSize:11,color:"rgba(255,255,255,.45)",letterSpacing:2,textTransform:"uppercase",display:"block",marginTop:-2}}>{sub}</span>}
-        </div>
+        </button>
       </div>
-      <div>{right}</div>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <button onClick={function(){ setStep("home"); }} style={{padding:"6px 14px",borderRadius:999,border:"2px solid rgba(255,255,255,.28)",background:"rgba(255,255,255,.06)",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>
+          RadReport Home
+        </button>
+        <div>{right}</div>
+      </div>
     </header>
   );
 }
@@ -5861,11 +5866,11 @@ function RadReport() {
       label: patient.name,
       modality: modality,
       region: region,
-      patient: patient,
-      findings: findings,
-      tags: tags,
-      contentStyles: contentStyles,
-      guidelineSelections: guidelineSelections,
+      patient: Object.assign({}, patient),
+      findings: Object.assign({}, findings),
+      tags: Object.assign({}, tags),
+      contentStyles: Object.assign({}, contentStyles),
+      guidelineSelections: Object.assign({}, guidelineSelections),
       impression: impression,
       recommendation: recommendation,
       urgency: urgency,
@@ -5909,6 +5914,14 @@ function RadReport() {
     saveRecordSnapshot(meta, true);
     showToast("✅ Report finalized (" + result.score + "% confidence)", "success");
   }, [canFinalize, runFinalizeAudit, authUser, patient.reportingDoc, saveRecordSnapshot, showToast]);
+
+  var openPreviewWithDoctorGuard = useCallback(function() {
+    if (!patient.reportingDoc) {
+      showToast("Assign the finalizing reporting doctor before generating the report", "error");
+      return;
+    }
+    setStep("preview");
+  }, [patient.reportingDoc, showToast]);
 
   var persistAllDrafts = useCallback(async function(next) {
     if (!authUser || !authUser.username) return;
@@ -6065,10 +6078,11 @@ function RadReport() {
       savedAt: now,
       modality: modality,
       region: region,
-      patient: patient,
-      findings: findings,
-      tags: tags,
-      contentStyles: contentStyles,
+      patient: Object.assign({}, patient),
+      findings: Object.assign({}, findings),
+      tags: Object.assign({}, tags),
+      contentStyles: Object.assign({}, contentStyles),
+      guidelineSelections: Object.assign({}, guidelineSelections),
       impression: impression,
       recommendation: recommendation,
       urgency: urgency,
@@ -6083,10 +6097,10 @@ function RadReport() {
         var history = (existing.versions || []).slice();
         history.unshift({
           savedAt: existing.savedAt,
-          findings: existing.findings,
-          tags: existing.tags,
-          contentStyles: existing.contentStyles,
-          guidelineSelections: existing.guidelineSelections,
+          findings: Object.assign({}, existing.findings || {}),
+          tags: Object.assign({}, existing.tags || {}),
+          contentStyles: Object.assign({}, existing.contentStyles || {}),
+          guidelineSelections: Object.assign({}, existing.guidelineSelections || {}),
           impression: existing.impression,
           recommendation: existing.recommendation,
           urgency: existing.urgency
@@ -6123,25 +6137,38 @@ function RadReport() {
 
   var loadRecordIntoWorkspace = useCallback(function(record, nextStep) {
     if (!record) return;
+    var openingEditor = nextStep === "template";
+    var linkedDraft = openingEditor && record.sourceDraftId
+      ? (savedReports.find(function(item) { return item.id === record.sourceDraftId; }) || null)
+      : null;
+    if (openingEditor && linkedDraft) {
+      loadDraft(linkedDraft);
+      setTemplateBackStep("records");
+      setSelectedRecordId(record.id || null);
+      setFinalizedMeta(null);
+      setFinalizeAudit(null);
+      showToast("📚 Report loaded into editor", "success");
+      return;
+    }
     importedTemplateSeedRef.current = (record && record.modality && record.region) ? (record.modality + "__" + record.region) : "";
-    setActiveDraftId(record.sourceDraftId || null);
-    setTemplateBackStep("patient");
+    setActiveDraftId(openingEditor ? (record.sourceDraftId || ((record.id || ("record_" + Date.now())) + "__editable")) : (record.sourceDraftId || null));
+    setTemplateBackStep(openingEditor ? "records" : "patient");
     setModality(record.modality || null);
     setRegion(record.region || null);
-    setPatient(Object.assign(makeEmptyPatient(), record.patient || {}));
-    setFindings(record.findings || {});
-    setTags(record.tags || {});
-    setContentStyles(record.contentStyles || {});
-    setGuidelineSelections(record.guidelineSelections || {});
+    setPatient(Object.assign(makeEmptyPatient(), Object.assign({}, record.patient || {})));
+    setFindings(Object.assign({}, record.findings || {}));
+    setTags(Object.assign({}, record.tags || {}));
+    setContentStyles(Object.assign({}, record.contentStyles || {}));
+    setGuidelineSelections(Object.assign({}, record.guidelineSelections || {}));
     setImpression(record.impression || "");
     setRec(record.recommendation || "");
     setUrgency(record.urgency || "Routine");
-    setFinalizedMeta(record.finalizedMeta || null);
+    setFinalizedMeta(openingEditor ? null : (record.finalizedMeta || null));
     setFinalizeAudit(null);
     setSelectedRecordId(record.id || null);
     setStep(nextStep || "preview");
-    showToast("📚 Record loaded", "success");
-  }, [showToast]);
+    showToast(openingEditor ? "📚 Report loaded into editor" : "📚 Record loaded", "success");
+  }, [showToast, savedReports, loadDraft]);
 
   var restoreVersion = useCallback(function(draft, ver) {
     if (!draft || !ver) return;
@@ -8017,7 +8044,7 @@ function RadReport() {
           <button style={obtn("#fff")} onClick={function(){ setStep("drafts"); }}>Drafts</button>
           <button style={obtn("#fff")} onClick={function(){ openRecords("impression"); }}>Records</button>
           <button style={obtn("#fff")} onClick={function(){ var nm = window.prompt("Draft name", patient.name || "Untitled draft"); if (nm !== null) saveDraft(nm); }}>Save Draft</button>
-          <button style={btn(C.col)} onClick={function(){setStep("preview");}}>Preview Report →</button>
+          <button style={Object.assign({}, btn(C.col), !patient.reportingDoc ? {opacity:.6,cursor:"not-allowed"} : {})} disabled={!patient.reportingDoc} onClick={openPreviewWithDoctorGuard}>Preview Report →</button>
         </div>}
       />
       <div style={pg}>
@@ -8042,6 +8069,9 @@ function RadReport() {
                 })}
               </select>
             </div>
+          </div>
+          <div style={{padding:"0 20px 18px",fontSize:11,color:C.soft}}>
+            The report cannot move to preview or finalization until the finalizing reporting doctor is assigned.
           </div>
         </div>
         {!!availableGuidelinePacks.length && (
@@ -8162,7 +8192,7 @@ function RadReport() {
         </div>
         <div style={{display:"flex",justifyContent:"flex-end",gap:12}}>
           <button style={obtn(C.soft)} onClick={function(){setStep("template");}}>← Findings</button>
-          <button style={btn(C.col)} onClick={function(){setStep("preview");}}>Generate Report →</button>
+          <button style={Object.assign({}, btn(C.col), !patient.reportingDoc ? {opacity:.6,cursor:"not-allowed"} : {})} disabled={!patient.reportingDoc} onClick={openPreviewWithDoctorGuard}>Generate Report →</button>
         </div>
       </div>
     </div>
@@ -8544,7 +8574,7 @@ function RadReport() {
             <button style={obtn("#fff")} onClick={function(){ var nm = window.prompt("Draft name", patient.name || "Untitled draft"); if (nm !== null) saveDraft(nm); }}>Save Draft</button>
             <button style={obtn("#fff")} onClick={function(){window.print();}}>🖨️ Print / PDF</button>
             <button style={obtn("#fff")} onClick={runFinalizeAudit}>Run QA</button>
-            <button style={btn(canFinalize ? C.ok : "#8CA3BF")} disabled={!canFinalize} onClick={finalizeReport}>
+            <button style={btn((canFinalize && patient.reportingDoc) ? C.ok : "#8CA3BF")} disabled={!canFinalize || !patient.reportingDoc} onClick={finalizeReport}>
               Finalize
             </button>
             <button style={btn(C.err)} onClick={reset}>🔄 New Report</button>
