@@ -3898,6 +3898,81 @@ var GUIDELINE_ASSIST_PACKS = [
       { value: "BI-RADS 5", impression: "Highly suspicious breast MRI finding (BI-RADS 5).", recommendation: "Tissue diagnosis should be strongly considered." },
       { value: "BI-RADS 6", impression: "Known biopsy-proven malignancy (BI-RADS 6).", recommendation: "Definitive treatment planning should proceed with multidisciplinary correlation." }
     ]
+  },
+  {
+    id: "birads-us",
+    label: "BI-RADS Ultrasound",
+    subtitle: "Breast ultrasound assessment",
+    modalities: ["Ultrasound"],
+    triggers: ["bi-rads", "birads", "breast", "mammary", "breast us", "breast ultrasound"],
+    options: [
+      { value: "BI-RADS 1", impression: "Negative breast ultrasound examination (BI-RADS 1).", recommendation: "Routine breast imaging follow-up is suggested as clinically indicated." },
+      { value: "BI-RADS 2", impression: "Benign breast ultrasound finding (BI-RADS 2).", recommendation: "Routine breast imaging follow-up is suggested." },
+      { value: "BI-RADS 3", impression: "Probably benign breast ultrasound finding (BI-RADS 3).", recommendation: "Short-interval imaging follow-up is suggested." },
+      { value: "BI-RADS 4", impression: "Suspicious breast ultrasound finding (BI-RADS 4).", recommendation: "Tissue diagnosis should be considered." },
+      { value: "BI-RADS 5", impression: "Highly suspicious breast ultrasound finding (BI-RADS 5).", recommendation: "Image-guided tissue diagnosis should be strongly considered." },
+      { value: "BI-RADS 6", impression: "Known biopsy-proven breast malignancy (BI-RADS 6).", recommendation: "Definitive treatment planning should proceed with multidisciplinary correlation." }
+    ]
+  },
+  {
+    id: "birads-mammo",
+    label: "BI-RADS Mammography",
+    subtitle: "Mammography assessment",
+    modalities: ["X-Ray"],
+    triggers: ["bi-rads", "birads", "breast", "mammography", "mammogram", "mammo"],
+    options: [
+      { value: "BI-RADS 0", impression: "Incomplete mammographic assessment (BI-RADS 0).", recommendation: "Additional imaging evaluation is suggested." },
+      { value: "BI-RADS 1", impression: "Negative mammographic examination (BI-RADS 1).", recommendation: "Routine screening follow-up is suggested." },
+      { value: "BI-RADS 2", impression: "Benign mammographic finding (BI-RADS 2).", recommendation: "Routine screening follow-up is suggested." },
+      { value: "BI-RADS 3", impression: "Probably benign mammographic finding (BI-RADS 3).", recommendation: "Short-interval mammographic follow-up is suggested." },
+      { value: "BI-RADS 4", impression: "Suspicious mammographic finding (BI-RADS 4).", recommendation: "Tissue diagnosis should be considered." },
+      { value: "BI-RADS 5", impression: "Highly suspicious mammographic finding (BI-RADS 5).", recommendation: "Tissue diagnosis should be strongly considered." },
+      { value: "BI-RADS 6", impression: "Known biopsy-proven breast malignancy (BI-RADS 6).", recommendation: "Definitive management should proceed with multidisciplinary correlation." }
+    ]
+  },
+  {
+    id: "tirads",
+    label: "ACR TI-RADS",
+    subtitle: "Thyroid nodule assessment",
+    modalities: ["Ultrasound"],
+    triggers: ["ti-rads", "tirads", "thyroid", "thyroid nodule", "neck"],
+    options: [
+      { value: "TR1", impression: "Benign thyroid nodule appearance (ACR TI-RADS TR1).", recommendation: "No fine-needle aspiration or imaging follow-up is suggested." },
+      { value: "TR2", impression: "Not suspicious thyroid nodule appearance (ACR TI-RADS TR2).", recommendation: "No routine fine-needle aspiration is suggested." },
+      { value: "TR3", impression: "Mildly suspicious thyroid nodule (ACR TI-RADS TR3).", recommendation: "Follow-up ultrasound may be considered based on nodule size and clinical setting." },
+      { value: "TR4", impression: "Moderately suspicious thyroid nodule (ACR TI-RADS TR4).", recommendation: "Ultrasound follow-up and/or fine-needle aspiration should be considered based on nodule size." },
+      { value: "TR5", impression: "Highly suspicious thyroid nodule (ACR TI-RADS TR5).", recommendation: "Fine-needle aspiration and endocrine / surgical correlation should be considered based on nodule size." }
+    ]
+  },
+  {
+    id: "orads-us",
+    label: "O-RADS Ultrasound",
+    subtitle: "Adnexal lesion risk assessment",
+    modalities: ["Ultrasound"],
+    triggers: ["o-rads", "orads", "ovary", "ovarian", "adnexa", "adnexal", "tvs", "pelvis"],
+    options: [
+      { value: "O-RADS 0", impression: "Incomplete adnexal lesion assessment (O-RADS US 0).", recommendation: "Further targeted ultrasound evaluation is suggested." },
+      { value: "O-RADS 1", impression: "Normal premenopausal physiologic adnexal appearance (O-RADS US 1).", recommendation: "No dedicated follow-up is suggested." },
+      { value: "O-RADS 2", impression: "Almost certainly benign adnexal lesion (O-RADS US 2).", recommendation: "Routine or no follow-up is suggested based on clinical setting." },
+      { value: "O-RADS 3", impression: "Low-risk adnexal lesion (O-RADS US 3).", recommendation: "Gynecology correlation and interval follow-up ultrasound are suggested." },
+      { value: "O-RADS 4", impression: "Intermediate-risk adnexal lesion (O-RADS US 4).", recommendation: "Specialist gynecology / gynae-oncology review should be considered." },
+      { value: "O-RADS 5", impression: "High-risk adnexal lesion (O-RADS US 5).", recommendation: "Urgent gynae-oncology evaluation is recommended." }
+    ]
+  },
+  {
+    id: "lungrads",
+    label: "Lung-RADS",
+    subtitle: "Lung screening CT assessment",
+    modalities: ["CT Scan"],
+    triggers: ["lung-rads", "lungrads", "lung", "chest", "pulmonary nodule", "lung nodule", "screening"],
+    options: [
+      { value: "Lung-RADS 1", impression: "Negative low-dose CT screening examination (Lung-RADS 1).", recommendation: "Annual low-dose CT screening follow-up is suggested." },
+      { value: "Lung-RADS 2", impression: "Benign appearance / behavior on low-dose CT screening (Lung-RADS 2).", recommendation: "Annual low-dose CT screening follow-up is suggested." },
+      { value: "Lung-RADS 3", impression: "Probably benign pulmonary nodule finding (Lung-RADS 3).", recommendation: "Short-interval low-dose CT follow-up is suggested." },
+      { value: "Lung-RADS 4A", impression: "Suspicious pulmonary nodule finding (Lung-RADS 4A).", recommendation: "Short-interval chest CT and/or PET-CT / specialist review should be considered." },
+      { value: "Lung-RADS 4B", impression: "Very suspicious pulmonary nodule finding (Lung-RADS 4B).", recommendation: "Further diagnostic chest CT / PET-CT and multidisciplinary review are recommended." },
+      { value: "Lung-RADS 4X", impression: "Pulmonary nodule finding with additional high-risk imaging features (Lung-RADS 4X).", recommendation: "Urgent multidisciplinary thoracic oncology review is recommended." }
+    ]
   }
 ];
 
@@ -4202,6 +4277,69 @@ async function cloudSaveRecords(username, records) {
   if (!res.ok) throw new Error((data.error && data.error.message) || "Cloud save failed");
 }
 
+async function cloudLoadSharedReport(token) {
+  var res = await fetch("/api/share?token=" + encodeURIComponent(token), { method: "GET" });
+  var data = await res.json().catch(function() { return {}; });
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Shared report unavailable");
+  return data;
+}
+
+async function cloudSaveSharedReport(owner, record, token, origin) {
+  var res = await fetch("/api/share", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      owner: owner || "",
+      token: token || "",
+      origin: origin || "",
+      report: record || null
+    })
+  });
+  var data = await res.json().catch(function() { return {}; });
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Shared portal save failed");
+  return data;
+}
+
+function buildSharedPortalUrl(token, origin) {
+  var safeOrigin = String(origin || (typeof window !== "undefined" && window.location ? window.location.origin : "") || "").replace(/\/+$/g, "");
+  return (safeOrigin || "") + "/?share=" + encodeURIComponent(String(token || "").trim());
+}
+
+function buildShareQrUrl(url) {
+  return "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=" + encodeURIComponent(String(url || ""));
+}
+
+function buildShareableRecordPayload(record) {
+  var source = record && typeof record === "object" ? record : {};
+  var patient = source.patient && typeof source.patient === "object" ? source.patient : {};
+  return {
+    id: source.id || "",
+    label: source.label || patient.name || "",
+    modality: source.modality || "",
+    region: source.region || "",
+    urgency: source.urgency || "Routine",
+    finalizedAt: source.finalizedAt || "",
+    finalizedMeta: source.finalizedMeta || null,
+    findings: Object.assign({}, source.findings || {}),
+    tags: Object.assign({}, source.tags || {}),
+    contentStyles: Object.assign({}, source.contentStyles || {}),
+    guidelineSelections: Object.assign({}, source.guidelineSelections || {}),
+    impression: source.impression || "",
+    recommendation: source.recommendation || "",
+    patient: {
+      name: patient.name || "",
+      mrno: patient.mrno || "",
+      age: patient.age || "",
+      sex: patient.sex || "",
+      refBy: patient.refBy || "",
+      reportingDoc: patient.reportingDoc || "",
+      studyDate: patient.studyDate || "",
+      clinicalInfo: patient.clinicalInfo || "",
+      institution: patient.institution || ""
+    }
+  };
+}
+
 function makeRecordId(activeDraftId, patient, modality, region) {
   if (activeDraftId) return "record_" + activeDraftId;
   var raw = [patient && patient.name, patient && patient.studyDate, modality, region]
@@ -4288,6 +4426,37 @@ function formatRecordListDate(record) {
   var day = String(d.getDate()).padStart(2, "0");
   var month = String(d.getMonth() + 1).padStart(2, "0");
   return day + "-" + month + "-" + d.getFullYear();
+}
+
+function getRecordSections(record) {
+  var modalityName = record && record.modality ? record.modality : "";
+  var regionName = record && record.region ? record.region : "";
+  if (!modalityName || !regionName || !T[modalityName] || !T[modalityName].sections) return [];
+  return Array.isArray(T[modalityName].sections[regionName]) ? T[modalityName].sections[regionName] : [];
+}
+
+function getRecordImportedFieldMeta(record, sectionLabel, fieldLabel) {
+  var modalityName = record && record.modality ? record.modality : "";
+  var regionName = record && record.region ? record.region : "";
+  var template = IMPORTED_TEMPLATE_MAP[(modalityName && regionName) ? (modalityName + "__" + regionName) : ""] || null;
+  var metaMap = template && template.fieldMeta ? template.fieldMeta : {};
+  return metaMap[sectionLabel + "__" + fieldLabel] || null;
+}
+
+function getRecordFieldRaw(record, sectionLabel, fieldLabel) {
+  return record && record.findings ? (record.findings[sectionLabel + "__" + fieldLabel] || "") : "";
+}
+
+function getRecordFieldText(record, sectionLabel, fieldLabel) {
+  var raw = getRecordFieldRaw(record, sectionLabel, fieldLabel);
+  var meta = getRecordImportedFieldMeta(record, sectionLabel, fieldLabel);
+  return meta && isStructuredControlType(meta.controlType) ? structuredFieldToText(meta, raw) : raw;
+}
+
+function recordFieldHasContent(record, sectionLabel, fieldLabel) {
+  var raw = getRecordFieldRaw(record, sectionLabel, fieldLabel);
+  var meta = getRecordImportedFieldMeta(record, sectionLabel, fieldLabel);
+  return meta && isStructuredControlType(meta.controlType) ? structuredFieldHasContent(meta, raw) : !!String(raw || "").trim();
 }
 
 function splitCsv(v, toLower) {
@@ -5451,6 +5620,8 @@ function RadReport() {
   var [doctorDrawerOpen, setDoctorDrawerOpen] = useState(false);
   var [doctorPanelTab, setDoctorPanelTab] = useState("list");
   var [guidelineSelections, setGuidelineSelections] = useState({});
+  var [shareDialog, setShareDialog] = useState({ open: false, loading: false, error: "", url: "", qrUrl: "", expiresAt: "", token: "", title: "" });
+  var [sharedPortalState, setSharedPortalState] = useState({ loading: false, error: "", payload: null, token: "" });
   var importedTemplateSeedRef = useRef("");
   var printRef = useRef(null);
 
@@ -5479,6 +5650,24 @@ function RadReport() {
       };
     });
     setStep("analytics");
+  }, []);
+
+  var exitSharedPortal = useCallback(function() {
+    try {
+      var nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.delete("share");
+      window.history.replaceState({}, "", nextUrl.pathname + nextUrl.search);
+    } catch (e) {}
+    setSharedPortalState({ loading: false, error: "", payload: null, token: "" });
+    try {
+      var session = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+      if (session && session.username && session.role) {
+        setAuthUser(session);
+        setStep("home");
+        return;
+      }
+    } catch (e) {}
+    setStep("login");
   }, []);
 
   var openPatientRegistry = useCallback(function(backStep) {
@@ -5914,10 +6103,10 @@ function RadReport() {
     }
   }, [authUser, showToast]);
 
-  var saveRecordSnapshot = useCallback(function(meta, quiet) {
+  var buildRecordSnapshot = useCallback(function(meta) {
     if (!authUser || !authUser.username || !patient.name) return null;
     var recordId = makeRecordId(activeDraftId, patient, modality, region);
-    var snapshot = {
+    return {
       id: recordId,
       sourceDraftId: activeDraftId || null,
       label: patient.name,
@@ -5935,6 +6124,12 @@ function RadReport() {
       finalizedMeta: meta || finalizedMeta || null,
       updatedBy: authUser.username
     };
+  }, [authUser, activeDraftId, patient, modality, region, findings, tags, contentStyles, guidelineSelections, impression, recommendation, urgency, finalizedMeta]);
+
+  var saveRecordSnapshot = useCallback(function(meta, quiet) {
+    var snapshot = buildRecordSnapshot(meta);
+    if (!snapshot) return null;
+    var recordId = snapshot.id;
     setSavedRecords(function(prev) {
       var next = prev.slice();
       var idx = next.findIndex(function(item) { return item.id === recordId; });
@@ -5949,7 +6144,86 @@ function RadReport() {
     setSelectedRecordId(recordId);
     if (!quiet) showToast("📚 Record book updated", "success");
     return snapshot;
-  }, [authUser, activeDraftId, patient, modality, region, findings, tags, contentStyles, guidelineSelections, impression, recommendation, urgency, finalizedMeta, persistAllRecords, showToast]);
+  }, [buildRecordSnapshot, persistAllRecords, showToast]);
+
+  var closeShareDialog = useCallback(function() {
+    setShareDialog({ open: false, loading: false, error: "", url: "", qrUrl: "", expiresAt: "", token: "", title: "" });
+  }, []);
+
+  var openShareDialogForRecord = useCallback(async function(sourceRecord) {
+    if (!sourceRecord) {
+      showToast("Select a finalized report first", "error");
+      return;
+    }
+    setShareDialog(function(prev) {
+      return Object.assign({}, prev, {
+        open: true,
+        loading: true,
+        error: "",
+        url: "",
+        qrUrl: "",
+        expiresAt: "",
+        token: "",
+        title: (sourceRecord.patient && sourceRecord.patient.name) || sourceRecord.label || "Shared report"
+      });
+    });
+    try {
+      var existingShare = sourceRecord.sharePortal || {};
+      var sharePayload = buildShareableRecordPayload(sourceRecord);
+      var shareResult = await cloudSaveSharedReport(authUser && authUser.username ? authUser.username : "", sharePayload, existingShare.token || "", window.location.origin);
+      var shareUrl = shareResult.url || buildSharedPortalUrl(shareResult.token, window.location.origin);
+      var sharePortal = {
+        token: shareResult.token,
+        url: shareUrl,
+        createdAt: shareResult.createdAt || existingShare.createdAt || new Date().toISOString(),
+        updatedAt: shareResult.updatedAt || new Date().toISOString(),
+        expiresAt: shareResult.expiresAt || existingShare.expiresAt || ""
+      };
+      if (sourceRecord.id) {
+        setSavedRecords(function(prev) {
+          var next = prev.map(function(item) {
+            return item && item.id === sourceRecord.id ? Object.assign({}, item, { sharePortal: sharePortal }) : item;
+          });
+          persistAllRecords(next);
+          return next;
+        });
+      }
+      setShareDialog({
+        open: true,
+        loading: false,
+        error: "",
+        url: shareUrl,
+        qrUrl: buildShareQrUrl(shareUrl),
+        expiresAt: sharePortal.expiresAt,
+        token: sharePortal.token,
+        title: (sourceRecord.patient && sourceRecord.patient.name) || sourceRecord.label || "Shared report"
+      });
+      showToast("Secure share portal is ready", "success");
+    } catch (e) {
+      var errMsg = e && e.message ? e.message : "Unable to create secure share link";
+      setShareDialog({
+        open: true,
+        loading: false,
+        error: errMsg,
+        url: "",
+        qrUrl: "",
+        expiresAt: "",
+        token: "",
+        title: (sourceRecord.patient && sourceRecord.patient.name) || sourceRecord.label || "Shared report"
+      });
+      showToast(errMsg, "error");
+    }
+  }, [authUser, persistAllRecords, showToast]);
+
+  var shareCurrentPreview = useCallback(function() {
+    if (!finalizedMeta) {
+      showToast("Finalize the report before creating a secure share link", "error");
+      return;
+    }
+    var existingRecord = savedRecords.find(function(record) { return record && record.id === selectedRecordId; }) || null;
+    var sourceRecord = existingRecord || buildRecordSnapshot(finalizedMeta);
+    openShareDialogForRecord(sourceRecord);
+  }, [finalizedMeta, savedRecords, selectedRecordId, buildRecordSnapshot, openShareDialogForRecord, showToast]);
 
   var finalizeReport = useCallback(function() {
     if (!canFinalize) {
@@ -6121,6 +6395,8 @@ function RadReport() {
     setShortcutAdminQuery("");
     setShortcutEditor(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
     setGuidelineSelections({});
+    setShareDialog({ open: false, loading: false, error: "", url: "", qrUrl: "", expiresAt: "", token: "", title: "" });
+    setSharedPortalState({ loading: false, error: "", payload: null, token: "" });
     setActiveDraftId(null);
     setStep("login");
   }, []);
@@ -6361,6 +6637,23 @@ function RadReport() {
     var all = loadUsers();
     setUsers(all);
     setDoctorDirectory(loadDoctorDirectory());
+    var shareToken = "";
+    try {
+      shareToken = String((new URLSearchParams(window.location.search || "")).get("share") || "").trim();
+    } catch (e) {}
+    if (shareToken) {
+      setSharedPortalState({ loading: true, error: "", payload: null, token: shareToken });
+      setStep("shared");
+      (async function() {
+        try {
+          var sharedPayload = await cloudLoadSharedReport(shareToken);
+          setSharedPortalState({ loading: false, error: "", payload: sharedPayload, token: shareToken });
+        } catch (e) {
+          setSharedPortalState({ loading: false, error: e && e.message ? e.message : "Shared report unavailable", payload: null, token: shareToken });
+        }
+      })();
+      return;
+    }
     try {
       var s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
       if (s && s.username && s.role) {
@@ -7009,11 +7302,211 @@ function RadReport() {
       </div>
     </button>
   );
+  var shareDialogNode = shareDialog.open ? (
+    <div className="np" style={{position:"fixed",inset:0,zIndex:2500,background:"rgba(2,6,23,.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{width:"100%",maxWidth:720,background:"#fff",borderRadius:18,boxShadow:"0 28px 90px rgba(15,23,42,.35)",overflow:"hidden"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,padding:"18px 22px",borderBottom:"1px solid "+C.bdr,background:"#F8FAFC"}}>
+          <div>
+            <div style={{fontFamily:"'DM Serif Display',serif",fontSize:24,color:C.navy}}>Secure Share Portal</div>
+            <div style={{fontSize:12,color:C.soft,marginTop:4}}>{shareDialog.title || "Finalized report"}</div>
+          </div>
+          <button style={obtn(C.soft)} onClick={closeShareDialog}>Close</button>
+        </div>
+        <div style={{padding:22}}>
+          {shareDialog.loading && (
+            <div style={{padding:"28px 18px",border:"1px dashed "+C.bdr,borderRadius:14,color:C.soft,textAlign:"center"}}>
+              Creating secure link and QR portal...
+            </div>
+          )}
+          {!shareDialog.loading && shareDialog.error && (
+            <div style={{padding:"18px 16px",border:"1px solid #FECACA",background:"#FEF2F2",borderRadius:14,color:"#991B1B"}}>
+              {shareDialog.error}
+            </div>
+          )}
+          {!shareDialog.loading && !shareDialog.error && (
+            <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.15fr) minmax(220px,.85fr)",gap:18,alignItems:"start"}}>
+              <div style={{display:"grid",gap:14}}>
+                <div>
+                  <label style={lbl}>Secure Link</label>
+                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                    <input className="ri" style={inp({flex:1,background:"#fff"})} value={shareDialog.url} readOnly />
+                    <button style={btn(C.col, "#fff")} onClick={function(){
+                      if (!shareDialog.url) return;
+                      navigator.clipboard && navigator.clipboard.writeText(shareDialog.url).then(function() {
+                        showToast("Secure link copied", "success");
+                      }).catch(function() {
+                        showToast("Copy failed. Please copy the link manually.", "error");
+                      });
+                    }}>Copy Link</button>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                  <button style={btn(C.ok, "#fff")} onClick={function(){ window.open(shareDialog.url, "_blank", "noopener,noreferrer"); }}>Open Portal</button>
+                  <button style={obtn(C.col)} onClick={function(){ window.open(shareDialog.qrUrl, "_blank", "noopener,noreferrer"); }}>Open QR Image</button>
+                </div>
+                <div style={{fontSize:12,color:C.soft,lineHeight:1.7}}>
+                  Anyone with this link can open the finalized report portal without logging in. The current share link expires on <b>{shareDialog.expiresAt ? new Date(shareDialog.expiresAt).toLocaleString() : "—"}</b>.
+                </div>
+              </div>
+              <div style={{padding:14,border:"1px solid "+C.bdr,borderRadius:16,background:"#F8FAFC",display:"grid",gap:10,justifyItems:"center"}}>
+                <img src={shareDialog.qrUrl} alt="Report QR code" style={{width:220,height:220,borderRadius:12,background:"#fff",padding:10,border:"1px solid #E2E8F0"}} />
+                <div style={{fontSize:11,color:C.soft,textAlign:"center",lineHeight:1.6}}>Scan this QR code to open the secure report portal.</div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  ) : null;
+  var sharedPortalRecord = sharedPortalState && sharedPortalState.payload ? sharedPortalState.payload.report : null;
+  var sharedPortalSections = getRecordSections(sharedPortalRecord);
+  var sharedPortalHasAbn = sharedPortalRecord ? Object.keys(sharedPortalRecord.tags || {}).some(function(key) { return sharedPortalRecord.tags[key] === "ab"; }) : false;
   var shortcutQ = shortcutAdminQuery.trim().toLowerCase();
   var shortcutManagerRows = (shortcutQ ? allShortcuts.filter(function(sc) {
     var hay = [sc.code || "", sc.title || "", (sc.fallback || ""), (sc.regionKeywords || []).join(" "), (sc.sectionKeywords || []).join(" "), (sc.fieldKeywords || []).join(" ")].join(" ").toLowerCase();
     return hay.indexOf(shortcutQ) !== -1;
   }) : customShortcuts).slice(0, 120);
+
+  if (step === "shared") return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.bg,minHeight:"100vh"}}>
+      <style>{CSS}</style>
+      <div className="np" style={{background:"linear-gradient(135deg,#0D2137,#1A3A5C)",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",height:64,boxShadow:"0 2px 12px rgba(0,0,0,.25)"}}>
+        <div>
+          <div style={{fontFamily:"'DM Serif Display',serif",fontSize:22,color:"#fff"}}>RadReport Pro</div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,.5)",letterSpacing:2,textTransform:"uppercase"}}>Shared Report Portal</div>
+        </div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          <button style={obtn("#fff")} onClick={function(){ window.print(); }}>Print / PDF</button>
+          <button style={btn(C.col, "#fff")} onClick={exitSharedPortal}>Open App</button>
+        </div>
+      </div>
+      <div style={pg}>
+        {sharedPortalState.loading && (
+          <div style={{background:"#fff",border:"1px solid "+C.bdr,borderRadius:16,padding:"34px 28px",textAlign:"center",color:C.soft}}>
+            Loading shared report...
+          </div>
+        )}
+        {!sharedPortalState.loading && !sharedPortalRecord && (
+          <div style={{background:"#fff",border:"1px solid #FECACA",borderRadius:16,padding:"30px 28px",color:"#991B1B"}}>
+            <div style={{fontFamily:"'DM Serif Display',serif",fontSize:26,marginBottom:8}}>Shared Report Unavailable</div>
+            <div style={{fontSize:14,lineHeight:1.7}}>{sharedPortalState.error || "This share link is invalid or has expired."}</div>
+          </div>
+        )}
+        {!sharedPortalState.loading && sharedPortalRecord && (
+          <div>
+            <div className="np" style={{background:"#EEF6FF",border:"1px solid #BFDBFE",borderRadius:12,padding:"12px 16px",fontSize:12,color:"#1E3A8A",marginBottom:14}}>
+              Secure view-only portal. Link valid until <b>{sharedPortalState.payload && sharedPortalState.payload.expiresAt ? new Date(sharedPortalState.payload.expiresAt).toLocaleString() : "—"}</b>.
+            </div>
+            <div style={Object.assign({},crd,{marginBottom:20})}>
+              <div style={{background:"linear-gradient(135deg,#0D2137,#1A3A5C)",padding:"22px 32px",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div>
+                  <div style={{fontFamily:"'DM Serif Display',serif",fontSize:26,color:"#fff"}}>{(sharedPortalRecord.patient && sharedPortalRecord.patient.institution) || "RadReport Pro"}</div>
+                  <div style={{fontSize:12,color:"rgba(255,255,255,.55)",letterSpacing:1.5,textTransform:"uppercase"}}>Radiology & Imaging Report</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:12,color:"rgba(255,255,255,.5)"}}>Study Date</div>
+                  <div style={{fontSize:15,color:"#fff",fontWeight:700}}>{(sharedPortalRecord.patient && sharedPortalRecord.patient.studyDate) || "—"}</div>
+                  <div style={{marginTop:8,padding:"4px 14px",borderRadius:20,fontSize:11,fontWeight:800,background:sharedPortalRecord.urgency==="Routine"?C.ok:sharedPortalRecord.urgency==="Urgent"?C.warn:C.err,color:"#fff"}}>{String(sharedPortalRecord.urgency || "Routine").toUpperCase()}</div>
+                </div>
+              </div>
+              <div style={{padding:"14px 32px",background:"#F8FAFC",borderBottom:"1px solid "+C.bdr,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:14}}>
+                {[["Patient",(sharedPortalRecord.patient && sharedPortalRecord.patient.name) || "—"],["MRNO",(sharedPortalRecord.patient && sharedPortalRecord.patient.mrno) || "—"],["Age / Sex",((sharedPortalRecord.patient && sharedPortalRecord.patient.age) || "—") + " / " + ((sharedPortalRecord.patient && sharedPortalRecord.patient.sex) || "—")],["Referred By",(sharedPortalRecord.patient && sharedPortalRecord.patient.refBy) || "—"]].map(function(x){return(
+                  <div key={x[0]}><div style={{fontSize:10,fontWeight:700,color:C.soft,textTransform:"uppercase",letterSpacing:.8}}>{x[0]}</div><div style={{fontSize:14,fontWeight:600,color:C.navy,marginTop:2}}>{x[1]}</div></div>
+                );})}
+              </div>
+              <div style={{padding:"14px 32px",display:"flex",gap:20,alignItems:"center",flexWrap:"wrap"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:22}}>{(T[sharedPortalRecord.modality] && T[sharedPortalRecord.modality].icon) || "🩻"}</span>
+                  <div><div style={{fontSize:10,fontWeight:700,color:C.soft,textTransform:"uppercase"}}>Modality</div><div style={{fontSize:15,fontWeight:700,color:C.navy}}>{sharedPortalRecord.modality || "—"} — {sharedPortalRecord.region || "—"}</div></div>
+                </div>
+                {(sharedPortalRecord.patient && sharedPortalRecord.patient.clinicalInfo) && (
+                  <div style={{flex:1,padding:"10px 14px",background:"#F0F4FF",borderRadius:8,borderLeft:"3px solid "+C.col}}>
+                    <div style={{fontSize:10,fontWeight:700,color:C.soft,textTransform:"uppercase"}}>Clinical History</div>
+                    <div style={resolveTextStyle((sharedPortalRecord.contentStyles && sharedPortalRecord.contentStyles["patient__clinicalInfo"]) || DEFAULT_TEXT_STYLE, {color:C.txt,marginTop:2,whiteSpace:"pre-wrap"})}>{sharedPortalRecord.patient.clinicalInfo}</div>
+                  </div>
+                )}
+                {sharedPortalHasAbn && <div style={{padding:"8px 14px",borderRadius:8,background:"#FFF0EE",border:"1px solid #FFCCC7"}}><div style={{fontSize:10,fontWeight:700,color:C.err,textTransform:"uppercase"}}>Abnormal</div><div style={{fontSize:14,fontWeight:800,color:C.err}}>Flagged findings present</div></div>}
+              </div>
+            </div>
+
+            {!!sharedPortalSections.length && (
+              <div style={crd}>
+                <div style={Object.assign(cHd(C.col),{background:"linear-gradient(90deg,"+C.col+"18,transparent)"})}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Findings</span></div>
+                <div style={{padding:"20px 32px"}}>
+                  {sharedPortalSections.map(function(sec) {
+                    var rows = sec.fields.filter(function(field) {
+                      return recordFieldHasContent(sharedPortalRecord, sec.label, field) || (sharedPortalRecord.tags && sharedPortalRecord.tags[sec.label + "__" + field]);
+                    });
+                    if (!rows.length) return null;
+                    return (
+                      <div key={sec.label} style={{marginBottom:20}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,margin:"18px 0 10px"}}>
+                          <div style={{width:8,height:8,borderRadius:"50%",background:C.col}} />
+                          <div style={{fontWeight:800,fontSize:12,color:C.col,textTransform:"uppercase",letterSpacing:1}}>{sec.label}</div>
+                          <div style={{flex:1,height:1,background:C.bdr}} />
+                        </div>
+                        <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>
+                          {sec.fields.map(function(field) {
+                            var meta = getRecordImportedFieldMeta(sharedPortalRecord, sec.label, field);
+                            var key = sec.label + "__" + field;
+                            var tagValue = sharedPortalRecord.tags ? sharedPortalRecord.tags[key] : null;
+                            var fieldTextStyle = (sharedPortalRecord.contentStyles && sharedPortalRecord.contentStyles[key]) || DEFAULT_TEXT_STYLE;
+                            if (meta && isStructuredControlType(meta.controlType)) {
+                              if (!recordFieldHasContent(sharedPortalRecord, sec.label, field)) return null;
+                              return (
+                                <tr key={field} style={{borderBottom:"1px solid "+C.bdr}}>
+                                  <td style={{padding:"10px 0",fontSize:13,fontWeight:600,color:C.soft,width:200,verticalAlign:"top"}}>{meta.paramName || field}</td>
+                                  <td style={{padding:"10px 12px",verticalAlign:"top"}}>
+                                    <ImportedStructuredPreview meta={meta} value={getRecordFieldRaw(sharedPortalRecord, sec.label, field)} textStyle={fieldTextStyle} />
+                                  </td>
+                                  <td style={{padding:"10px 0"}} />
+                                </tr>
+                              );
+                            }
+                            if (!recordFieldHasContent(sharedPortalRecord, sec.label, field) && !tagValue) return null;
+                            return (
+                              <tr key={field} style={{borderBottom:"1px solid "+C.bdr}}>
+                                <td style={{padding:"7px 0",fontSize:13,fontWeight:600,color:C.soft,width:200,verticalAlign:"top"}}>{field}</td>
+                                <td style={resolveTextStyle(fieldTextStyle, {padding:"7px 12px",color:tagValue==="ab"?C.err:C.txt,fontWeight:normalizeTextStyle(fieldTextStyle).bold ? 700 : (tagValue==="ab"?600:400),verticalAlign:"top",whiteSpace:"pre-wrap"})}>{getRecordFieldText(sharedPortalRecord, sec.label, field) || "—"}</td>
+                                <td style={{padding:"7px 0",textAlign:"right",verticalAlign:"top"}}>
+                                  {tagValue && <span style={{fontSize:10,padding:"2px 8px",borderRadius:20,fontWeight:700,background:tagValue==="n"?"#E8F8F2":"#FEECEC",color:tagValue==="n"?C.ok:C.err,border:"1px solid "+(tagValue==="n"?"#A8E6CF":"#FFACAC")}}>{tagValue==="n"?"NORMAL":"ABNORMAL"}</span>}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody></table>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {!!sharedPortalRecord.impression && (
+              <div style={Object.assign({},crd,{border:"2px solid "+(sharedPortalHasAbn?"#FFACAC":"#A8E6CF")})}>
+                <div style={Object.assign(cHd(sharedPortalHasAbn?C.err:C.ok),{background:sharedPortalHasAbn?"#FFF5F5":"#F5FFF9"})}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Impression & Conclusion</span></div>
+                <div style={resolveTextStyle((sharedPortalRecord.contentStyles && sharedPortalRecord.contentStyles.impression) || DEFAULT_TEXT_STYLE, {padding:"20px 32px",lineHeight:1.85,color:C.txt,whiteSpace:"pre-wrap"})}>{sharedPortalRecord.impression}</div>
+              </div>
+            )}
+            {!!sharedPortalRecord.recommendation && (
+              <div style={crd}>
+                <div style={cHd(C.warn)}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Recommendations</span></div>
+                <div style={resolveTextStyle((sharedPortalRecord.contentStyles && sharedPortalRecord.contentStyles.recommendation) || DEFAULT_TEXT_STYLE, {padding:"20px 32px",lineHeight:1.85,whiteSpace:"pre-wrap",color:C.txt})}>{sharedPortalRecord.recommendation}</div>
+              </div>
+            )}
+            <div style={{background:C.sur,borderRadius:12,padding:"22px 32px",border:"1px solid "+C.bdr,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+              <div style={{fontSize:11,color:C.soft}}>Shared from RadReport Pro on {sharedPortalRecord.finalizedAt ? new Date(sharedPortalRecord.finalizedAt).toLocaleString() : "—"}<br/>For clinical use by qualified medical practitioners only.</div>
+              <div style={{textAlign:"right"}}>
+                <div style={{width:180,borderBottom:"2px solid "+C.navy,marginBottom:6}} />
+                <div style={{fontSize:13,fontWeight:700,color:C.navy}}>{(sharedPortalRecord.patient && sharedPortalRecord.patient.reportingDoc) || ((sharedPortalRecord.finalizedMeta && sharedPortalRecord.finalizedMeta.by) || "Doctor")}</div>
+                <div style={{fontSize:11,color:C.soft}}>Scan and Reported by</div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   if (step === "login") return (
     <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:"linear-gradient(140deg,#06101b,#0f2440)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -8527,13 +9020,20 @@ function RadReport() {
                     <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:16}}>
                       <button style={btn(C.col, "#fff")} onClick={function(){ loadRecordIntoWorkspace(selectedRecord, "preview"); }}>Open Preview</button>
                       <button style={obtn(C.col)} onClick={function(){ loadRecordIntoWorkspace(selectedRecord, "template"); }}>Load Into Editor</button>
+                      <button style={obtn(C.ok)} onClick={function(){ openShareDialogForRecord(selectedRecord); }}>Share Link / QR</button>
                     </div>
+                    {selectedRecord.sharePortal && selectedRecord.sharePortal.url && (
+                      <div style={{fontSize:11,color:C.soft,marginTop:12,lineHeight:1.7}}>
+                        Active share portal: <a href={selectedRecord.sharePortal.url} target="_blank" rel="noreferrer" style={{color:C.col,fontWeight:700}}>{selectedRecord.sharePortal.url}</a>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             </div>
           </div>
         </div>
+        {shareDialogNode}
       </div>
     </div>
   );
@@ -8764,6 +9264,7 @@ function RadReport() {
             <button style={obtn("#fff")} onClick={function(){ openRecords("preview"); }}>Records</button>
             <button style={obtn("#fff")} onClick={function(){ var nm = window.prompt("Draft name", patient.name || "Untitled draft"); if (nm !== null) saveDraft(nm); }}>Save Draft</button>
             <button style={obtn("#fff")} onClick={function(){window.print();}}>🖨️ Print / PDF</button>
+            <button style={Object.assign({}, obtn("#16A34A"), !finalizedMeta ? {opacity:.55,cursor:"not-allowed"} : {})} disabled={!finalizedMeta} onClick={shareCurrentPreview}>Share Link / QR</button>
             <button style={obtn("#fff")} onClick={runFinalizeAudit}>Run QA</button>
             <button style={btn((canFinalize && patient.reportingDoc) ? C.ok : "#8CA3BF")} disabled={!canFinalize || !patient.reportingDoc} onClick={finalizeReport}>
               Finalize
@@ -8910,6 +9411,7 @@ function RadReport() {
             </div>
           </div>
         </div>
+        {shareDialogNode}
       </div>
     );
   }
