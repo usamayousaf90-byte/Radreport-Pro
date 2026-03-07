@@ -1,0 +1,11 @@
+{
+  "name": "radreport-pro",
+  "private": true,
+  "scripts": {
+    "db:migrate": "node scripts/migrate.js",
+    "db:seed": "node scripts/seed-demo.js"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}
