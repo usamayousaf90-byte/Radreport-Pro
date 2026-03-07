@@ -3806,6 +3806,110 @@ function getPatientTitleOptions(selectedTitle) {
     : PATIENT_TITLE_OPTIONS.slice();
 }
 
+function getDaysAgoISO(daysAgo) {
+  var base = new Date();
+  base.setHours(0, 0, 0, 0);
+  base.setDate(base.getDate() - Number(daysAgo || 0));
+  return base.toISOString().slice(0, 10);
+}
+
+function isDateWithinRange(isoDate, startDate, endDate) {
+  var value = String(isoDate || "").trim();
+  if (!value) return false;
+  if (startDate && value < startDate) return false;
+  if (endDate && value > endDate) return false;
+  return true;
+}
+
+function appendDistinctText(existingText, nextText) {
+  var prev = String(existingText || "").trim();
+  var next = String(nextText || "").trim();
+  if (!next) return prev;
+  if (!prev) return next;
+  if (prev.toLowerCase().indexOf(next.toLowerCase()) !== -1) return prev;
+  return prev + "\n" + next;
+}
+
+var GUIDELINE_ASSIST_PACKS = [
+  {
+    id: "bosniak",
+    label: "Bosniak",
+    subtitle: "Renal cyst classification",
+    modalities: ["CT Scan", "MRI"],
+    triggers: ["bosniak", "kidney", "renal", "cyst"],
+    options: [
+      { value: "Bosniak I", impression: "Simple renal cyst (Bosniak I).", recommendation: "No imaging follow-up is suggested." },
+      { value: "Bosniak II", impression: "Minimally complex renal cyst (Bosniak II).", recommendation: "No routine imaging follow-up is suggested." },
+      { value: "Bosniak IIF", impression: "Probably benign complex renal cyst (Bosniak IIF).", recommendation: "Imaging follow-up is suggested to document stability." },
+      { value: "Bosniak III", impression: "Indeterminate complex cystic renal lesion (Bosniak III).", recommendation: "Urology review is suggested for management planning." },
+      { value: "Bosniak IV", impression: "Complex cystic renal lesion with malignant features (Bosniak IV).", recommendation: "Urology referral is recommended for definitive management." }
+    ]
+  },
+  {
+    id: "lirads",
+    label: "LI-RADS",
+    subtitle: "Liver risk stratification",
+    modalities: ["CT Scan", "MRI"],
+    triggers: ["li-rads", "liver lesion", "hepatocellular carcinoma", "hcc", "liver"],
+    options: [
+      { value: "LR-1", impression: "Benign liver observation (LI-RADS LR-1).", recommendation: "Routine surveillance may be continued as clinically indicated." },
+      { value: "LR-2", impression: "Probably benign liver observation (LI-RADS LR-2).", recommendation: "Routine surveillance or interval follow-up may be considered in the appropriate clinical setting." },
+      { value: "LR-3", impression: "Intermediate probability liver observation (LI-RADS LR-3).", recommendation: "Short-interval follow-up imaging is suggested as clinically appropriate." },
+      { value: "LR-4", impression: "Probably hepatocellular carcinoma (LI-RADS LR-4).", recommendation: "Multidisciplinary correlation is suggested for management planning." },
+      { value: "LR-5", impression: "Definitely hepatocellular carcinoma (LI-RADS LR-5).", recommendation: "Hepatology / oncology management is recommended." },
+      { value: "LR-M", impression: "Malignant liver observation, not specific for HCC (LI-RADS LR-M).", recommendation: "Multidisciplinary oncologic workup is recommended." }
+    ]
+  },
+  {
+    id: "pirads",
+    label: "PI-RADS",
+    subtitle: "Prostate MRI assessment",
+    modalities: ["MRI"],
+    triggers: ["pi-rads", "prostate", "lesions (pi-rads)"],
+    options: [
+      { value: "PI-RADS 1", impression: "No suspicious prostate lesion identified (PI-RADS 1).", recommendation: "Clinical follow-up may be continued as indicated." },
+      { value: "PI-RADS 2", impression: "Low likelihood of clinically significant prostate cancer (PI-RADS 2).", recommendation: "Clinical and laboratory correlation is suggested." },
+      { value: "PI-RADS 3", impression: "Equivocal prostate lesion (PI-RADS 3).", recommendation: "Urology correlation is suggested for management planning." },
+      { value: "PI-RADS 4", impression: "Suspicious prostate lesion (PI-RADS 4).", recommendation: "Targeted urology review and biopsy planning should be considered." },
+      { value: "PI-RADS 5", impression: "Highly suspicious prostate lesion (PI-RADS 5).", recommendation: "Targeted urology review and tissue diagnosis should be considered." }
+    ]
+  },
+  {
+    id: "birads-mri",
+    label: "BI-RADS MRI",
+    subtitle: "Breast MRI assessment",
+    modalities: ["MRI"],
+    triggers: ["bi-rads", "breast", "breast mri"],
+    options: [
+      { value: "BI-RADS 1", impression: "Negative breast MRI examination (BI-RADS 1).", recommendation: "Routine imaging follow-up is suggested as clinically indicated." },
+      { value: "BI-RADS 2", impression: "Benign breast MRI finding (BI-RADS 2).", recommendation: "Routine imaging follow-up is suggested." },
+      { value: "BI-RADS 3", impression: "Probably benign breast MRI finding (BI-RADS 3).", recommendation: "Short-interval follow-up imaging is suggested." },
+      { value: "BI-RADS 4", impression: "Suspicious breast MRI finding (BI-RADS 4).", recommendation: "Tissue diagnosis should be considered." },
+      { value: "BI-RADS 5", impression: "Highly suspicious breast MRI finding (BI-RADS 5).", recommendation: "Tissue diagnosis should be strongly considered." },
+      { value: "BI-RADS 6", impression: "Known biopsy-proven malignancy (BI-RADS 6).", recommendation: "Definitive treatment planning should proceed with multidisciplinary correlation." }
+    ]
+  }
+];
+
+function getApplicableGuidelinePacks(modalityName, regionName, sections) {
+  var modality = normalizeTemplateModality(modalityName || "");
+  var tokens = [modalityName || "", regionName || ""];
+  (Array.isArray(sections) ? sections : []).forEach(function(section) {
+    if (!section) return;
+    tokens.push(section.label || "");
+    (Array.isArray(section.fields) ? section.fields : []).forEach(function(field) {
+      tokens.push(field || "");
+    });
+  });
+  var hay = tokens.join(" ").toLowerCase();
+  return GUIDELINE_ASSIST_PACKS.filter(function(pack) {
+    if (Array.isArray(pack.modalities) && pack.modalities.length && pack.modalities.indexOf(modality) === -1) return false;
+    return (pack.triggers || []).some(function(trigger) {
+      return hay.indexOf(String(trigger || "").toLowerCase()) !== -1;
+    });
+  });
+}
+
 function buildSequentialMrno(studyDate, existingPatients, currentId) {
   var dateCode = String(studyDate || getTodayISO()).replace(/[^0-9]/g, "").slice(0, 6);
   var prefix = "MR-" + (dateCode || getTodayISO().replace(/[^0-9]/g, "").slice(0, 6)) + "-";
@@ -5275,6 +5379,8 @@ function RadReport() {
   var [selectedRegistryPatientId, setSelectedRegistryPatientId] = useState(null);
   var [reportingBackStep, setReportingBackStep] = useState("home");
   var [templateBackStep, setTemplateBackStep] = useState("patient");
+  var [analyticsBackStep, setAnalyticsBackStep] = useState("home");
+  var [analyticsFilters, setAnalyticsFilters] = useState({ start: getDaysAgoISO(29), end: getTodayISO() });
   var [reportingDate, setReportingDate] = useState(getTodayISO());
   var [reportingQuery, setReportingQuery] = useState("");
   var [reportingModality, setReportingModality] = useState("");
@@ -5288,6 +5394,7 @@ function RadReport() {
   var [doctorForm, setDoctorForm] = useState(makeEmptyDoctorForm);
   var [doctorDrawerOpen, setDoctorDrawerOpen] = useState(false);
   var [doctorPanelTab, setDoctorPanelTab] = useState("list");
+  var [guidelineSelections, setGuidelineSelections] = useState({});
   var importedTemplateSeedRef = useRef("");
   var printRef = useRef(null);
 
@@ -5305,6 +5412,17 @@ function RadReport() {
   var openRecords = useCallback(function(backStep) {
     setRecordBackStep(backStep || "home");
     setStep("records");
+  }, []);
+
+  var openAnalytics = useCallback(function(backStep, nextStart, nextEnd) {
+    setAnalyticsBackStep(backStep || "home");
+    setAnalyticsFilters(function(prev) {
+      return {
+        start: nextStart || prev.start || getDaysAgoISO(29),
+        end: nextEnd || prev.end || getTodayISO()
+      };
+    });
+    setStep("analytics");
   }, []);
 
   var openPatientRegistry = useCallback(function(backStep) {
@@ -5747,6 +5865,7 @@ function RadReport() {
       findings: findings,
       tags: tags,
       contentStyles: contentStyles,
+      guidelineSelections: guidelineSelections,
       impression: impression,
       recommendation: recommendation,
       urgency: urgency,
@@ -5768,7 +5887,7 @@ function RadReport() {
     setSelectedRecordId(recordId);
     if (!quiet) showToast("📚 Record book updated", "success");
     return snapshot;
-  }, [authUser, activeDraftId, patient, modality, region, findings, tags, contentStyles, impression, recommendation, urgency, finalizedMeta, persistAllRecords, showToast]);
+  }, [authUser, activeDraftId, patient, modality, region, findings, tags, contentStyles, guidelineSelections, impression, recommendation, urgency, finalizedMeta, persistAllRecords, showToast]);
 
   var finalizeReport = useCallback(function() {
     if (!canFinalize) {
@@ -5919,6 +6038,8 @@ function RadReport() {
     setSelectedRegistryPatientId(null);
     setReportingBackStep("home");
     setTemplateBackStep("patient");
+    setAnalyticsBackStep("home");
+    setAnalyticsFilters({ start: getDaysAgoISO(29), end: getTodayISO() });
     setReportingDate(getTodayISO());
     setReportingQuery("");
     setReportingModality("");
@@ -5929,6 +6050,7 @@ function RadReport() {
     setSelectedRecordId(null);
     setShortcutAdminQuery("");
     setShortcutEditor(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
+    setGuidelineSelections({});
     setActiveDraftId(null);
     setStep("login");
   }, []);
@@ -5964,6 +6086,7 @@ function RadReport() {
           findings: existing.findings,
           tags: existing.tags,
           contentStyles: existing.contentStyles,
+          guidelineSelections: existing.guidelineSelections,
           impression: existing.impression,
           recommendation: existing.recommendation,
           urgency: existing.urgency
@@ -5978,7 +6101,7 @@ function RadReport() {
     });
     setActiveDraftId(snapshot.id);
     showToast("💾 Draft saved", "success");
-  }, [authUser, activeDraftId, patient, modality, region, findings, tags, contentStyles, impression, recommendation, urgency, persistAllDrafts, showToast]);
+  }, [authUser, activeDraftId, patient, modality, region, findings, tags, contentStyles, guidelineSelections, impression, recommendation, urgency, persistAllDrafts, showToast]);
 
   var loadDraft = useCallback(function(draft) {
     importedTemplateSeedRef.current = (draft && draft.modality && draft.region) ? (draft.modality + "__" + draft.region) : "";
@@ -5990,6 +6113,7 @@ function RadReport() {
     setFindings(draft.findings || {});
     setTags(draft.tags || {});
     setContentStyles(draft.contentStyles || {});
+    setGuidelineSelections(draft.guidelineSelections || {});
     setImpression(draft.impression || "");
     setRec(draft.recommendation || "");
     setUrgency(draft.urgency || "Routine");
@@ -6008,6 +6132,7 @@ function RadReport() {
     setFindings(record.findings || {});
     setTags(record.tags || {});
     setContentStyles(record.contentStyles || {});
+    setGuidelineSelections(record.guidelineSelections || {});
     setImpression(record.impression || "");
     setRec(record.recommendation || "");
     setUrgency(record.urgency || "Routine");
@@ -6025,6 +6150,7 @@ function RadReport() {
       findings: ver.findings || {},
       tags: ver.tags || {},
       contentStyles: ver.contentStyles || draft.contentStyles || {},
+      guidelineSelections: ver.guidelineSelections || draft.guidelineSelections || {},
       impression: ver.impression || "",
       recommendation: ver.recommendation || "",
       urgency: ver.urgency || "Routine"
@@ -6173,6 +6299,7 @@ function RadReport() {
     setFindings({});
     setTags({});
     setContentStyles({});
+    setGuidelineSelections({});
     setImpression("");
     setRec("");
     setUrgency("Routine");
@@ -6189,6 +6316,7 @@ function RadReport() {
   var importedTemplateKey = (modality && region) ? (modality + "__" + region) : "";
   var currentImportedTemplate = importedTemplateKey ? (IMPORTED_TEMPLATE_MAP[importedTemplateKey] || null) : null;
   var importedFieldMeta = currentImportedTemplate && currentImportedTemplate.fieldMeta ? currentImportedTemplate.fieldMeta : {};
+  var availableGuidelinePacks = getApplicableGuidelinePacks(modality, region, sections);
 
   useEffect(function() {
     if (step !== "template" || !currentImportedTemplate || activeDraftId) return;
@@ -6211,6 +6339,23 @@ function RadReport() {
     setRegion(nextRegion || null);
     setStep("patient");
   }, [clearReportWorkspace]);
+
+  var applyGuidelineAssist = useCallback(function(pack, target) {
+    if (!pack) return;
+    var selectedValue = guidelineSelections[pack.id] || "";
+    var option = (pack.options || []).find(function(item) { return item.value === selectedValue; }) || null;
+    if (!option) {
+      showToast("Select a " + pack.label + " category first", "error");
+      return;
+    }
+    if (target === "impression" || target === "both") {
+      setImpression(function(prev) { return appendDistinctText(prev, option.impression); });
+    }
+    if (target === "recommendation" || target === "both") {
+      setRec(function(prev) { return appendDistinctText(prev, option.recommendation); });
+    }
+    showToast(pack.label + " guidance inserted. You can still edit it freely.", "success");
+  }, [guidelineSelections, showToast]);
 
   var getFieldMeta = function(sl, f) {
     return importedFieldMeta[sl + "__" + f] || null;
@@ -6557,6 +6702,101 @@ function RadReport() {
     return String((b && b.finalizedAt) || "").localeCompare(String((a && a.finalizedAt) || ""));
   });
   var selectedRecord = filteredRecords.find(function(record) { return record.id === selectedRecordId; }) || filteredRecords[0] || null;
+  var analyticsPatients = savedPatients.filter(function(item) {
+    return isDateWithinRange(item && item.studyDate, analyticsFilters.start, analyticsFilters.end);
+  });
+  var analyticsRecords = savedRecords.filter(function(record) {
+    return isDateWithinRange(getRecordDateISO(record), analyticsFilters.start, analyticsFilters.end);
+  }).slice().sort(function(a, b) {
+    return String((b && b.finalizedAt) || "").localeCompare(String((a && a.finalizedAt) || ""));
+  });
+  var analyticsPatientStatuses = analyticsPatients.map(function(item) {
+    var modalityKey = normalizeTemplateModality(item.requestedModality || "");
+    var regionKey = matchRegionForModality(modalityKey, item.requestedRegion || "");
+    return {
+      patient: item,
+      status: getReportingStudyStatus(item, modalityKey, regionKey, item.studyDate || "")
+    };
+  });
+  var analyticsStatusCounts = analyticsPatientStatuses.reduce(function(acc, row) {
+    var key = row && row.status && row.status.label ? row.status.label.toLowerCase() : "pending";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, { pending: 0, incomplete: 0, reported: 0 });
+  var analyticsTatHours = analyticsRecords.map(function(record) {
+    var studyDate = record && record.patient && record.patient.studyDate;
+    var finalizedAt = record && record.finalizedAt;
+    if (!studyDate || !finalizedAt) return null;
+    var start = new Date(studyDate + "T00:00:00");
+    var end = new Date(finalizedAt);
+    var diff = (end.getTime() - start.getTime()) / 36e5;
+    return isFinite(diff) && diff >= 0 ? diff : null;
+  }).filter(function(value) { return value !== null; });
+  var analyticsAvgTatHours = analyticsTatHours.length
+    ? (analyticsTatHours.reduce(function(sum, value) { return sum + value; }, 0) / analyticsTatHours.length)
+    : 0;
+  var analyticsDoctorMap = {};
+  analyticsRecords.forEach(function(record) {
+    var doctorName = ((record && record.patient && record.patient.reportingDoc) || (record && record.finalizedMeta && record.finalizedMeta.by) || "Unassigned").trim() || "Unassigned";
+    if (!analyticsDoctorMap[doctorName]) {
+      analyticsDoctorMap[doctorName] = { name: doctorName, reported: 0, urgent: 0, modalities: {} };
+    }
+    analyticsDoctorMap[doctorName].reported += 1;
+    if (record && record.urgency && record.urgency !== "Routine") analyticsDoctorMap[doctorName].urgent += 1;
+    if (record && record.modality) analyticsDoctorMap[doctorName].modalities[record.modality] = true;
+  });
+  var analyticsDoctorRows = Object.keys(analyticsDoctorMap).map(function(key) {
+    var row = analyticsDoctorMap[key];
+    return {
+      name: row.name,
+      reported: row.reported,
+      urgent: row.urgent,
+      modalityCount: Object.keys(row.modalities).length
+    };
+  }).sort(function(a, b) {
+    if (b.reported !== a.reported) return b.reported - a.reported;
+    return a.name.localeCompare(b.name);
+  });
+  var analyticsModalityRows = modalityEntries.map(function(entry) {
+    var modalityName = entry[0];
+    var patientsForModality = analyticsPatientStatuses.filter(function(row) {
+      return normalizeTemplateModality(row.patient.requestedModality || "") === modalityName;
+    });
+    var recordsForModality = analyticsRecords.filter(function(record) {
+      return normalizeTemplateModality(record.modality || "") === modalityName;
+    });
+    return {
+      name: modalityName,
+      icon: entry[1].icon,
+      color: entry[1].color,
+      registered: patientsForModality.length,
+      pending: patientsForModality.filter(function(row) { return row.status.label === "Pending"; }).length,
+      incomplete: patientsForModality.filter(function(row) { return row.status.label === "Incomplete"; }).length,
+      reported: patientsForModality.filter(function(row) { return row.status.label === "Reported"; }).length,
+      finalized: recordsForModality.length
+    };
+  }).filter(function(row) {
+    return row.registered || row.finalized;
+  }).sort(function(a, b) {
+    if (b.registered !== a.registered) return b.registered - a.registered;
+    return a.name.localeCompare(b.name);
+  });
+  var analyticsPendingStudies = analyticsPatientStatuses.filter(function(row) {
+    return row.status.label !== "Reported";
+  }).slice().sort(function(a, b) {
+    var aModality = normalizeTemplateModality(a.patient.requestedModality || "");
+    var bModality = normalizeTemplateModality(b.patient.requestedModality || "");
+    if (a.status.label !== b.status.label) return a.status.label.localeCompare(b.status.label);
+    if (aModality !== bModality) return aModality.localeCompare(bModality);
+    return composeRegisteredPatientName(a.patient).localeCompare(composeRegisteredPatientName(b.patient));
+  }).slice(0, 8);
+  var analyticsCriticalCount = analyticsRecords.filter(function(record) {
+    return String(record && record.urgency || "").toLowerCase().indexOf("critical") !== -1;
+  }).length;
+  var analyticsUrgentCount = analyticsRecords.filter(function(record) {
+    var urgencyLabel = String(record && record.urgency || "");
+    return urgencyLabel === "Urgent" || urgencyLabel.indexOf("Critical") === 0;
+  }).length;
   var shortcutQ = shortcutAdminQuery.trim().toLowerCase();
   var shortcutManagerRows = (shortcutQ ? allShortcuts.filter(function(sc) {
     var hay = [sc.code || "", sc.title || "", (sc.fallback || ""), (sc.regionKeywords || []).join(" "), (sc.sectionKeywords || []).join(" "), (sc.fieldKeywords || []).join(" ")].join(" ").toLowerCase();
@@ -6627,6 +6867,7 @@ function RadReport() {
               {authUser.username} · {authUser.role}
             </div>
           )}
+          <button style={obtn("#22D3EE")} onClick={function(){ openAnalytics("home"); }}>Analytics</button>
           <button style={obtn("#22D3EE")} onClick={function(){ openShortcutManager("home"); }}>Shortcut Manager</button>
           <button style={obtn("rgba(255,255,255,.8)")} onClick={doLogout}>Logout</button>
           {[["#6366F1","#A5B4FC","AI ENGINE","ONLINE"],["#0F766E","#2DD4BF","VOICE","READY"]].map(function(p,i){return(
@@ -6800,6 +7041,7 @@ function RadReport() {
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
             <button style={obtn("#fff")} onClick={function(){ openPatientRegistry("home"); }}>Patient Registry</button>
             <button style={obtn("#fff")} onClick={function(){ openReportingHub("home"); }}>Reporting</button>
+            <button style={obtn("#fff")} onClick={function(){ openAnalytics("home"); }}>Analytics</button>
             <button style={obtn("#fff")} onClick={function(){ openRecords("home"); }}>Record Book</button>
             <button style={obtn("#38BDF8")} onClick={function(){ openDoctorPanel("list"); }}>Doctor Directory</button>
           </div>
@@ -6960,6 +7202,189 @@ function RadReport() {
 
       {doctorDirectoryDrawer}
 
+    </div>
+  );
+
+  if (step === "analytics") return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.bg,minHeight:"100vh"}}>
+      <style>{CSS}</style>
+      <Toast msg={toast&&toast.msg} type={toast&&toast.type} onClose={function(){setToast(null);}} />
+      <AppHdr onBack backTo={analyticsBackStep || "home"} setStep={setStep} sub="Reporting Analytics"
+        right={<div style={{display:"flex",gap:10,alignItems:"center"}}>
+          <button style={obtn("#fff")} onClick={function(){ openRecords("analytics"); }}>Record Book</button>
+          <button style={obtn("#fff")} onClick={function(){ openReportingHub("analytics"); }}>Reporting Queue</button>
+        </div>}
+      />
+      <div style={pg}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:12,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontFamily:"'DM Serif Display',serif",fontSize:28,color:C.navy}}>Operational Analytics</div>
+            <div style={{fontSize:12,color:C.soft,marginTop:4}}>Track registered studies, pending work, incomplete drafts, finalized reports, turnaround time, and doctor/modality performance.</div>
+          </div>
+          <div style={{fontSize:12,color:C.soft}}>
+            Range: {analyticsFilters.start || "Start"} to {analyticsFilters.end || "End"}
+          </div>
+        </div>
+
+        <div style={crd}>
+          <div style={cHd("#0EA5E9")}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Dashboard Filters</span></div>
+          <div style={{padding:20,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,alignItems:"end"}}>
+            <div>
+              <label style={lbl}>From</label>
+              <input className="ri" type="date" style={inp()} value={analyticsFilters.start} onChange={function(e){ setAnalyticsFilters(function(prev){ return Object.assign({}, prev, { start: e.target.value }); }); }} />
+            </div>
+            <div>
+              <label style={lbl}>To</label>
+              <input className="ri" type="date" style={inp()} value={analyticsFilters.end} onChange={function(e){ setAnalyticsFilters(function(prev){ return Object.assign({}, prev, { end: e.target.value }); }); }} />
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button style={obtn(C.col)} onClick={function(){ var today = getTodayISO(); setAnalyticsFilters({ start: today, end: today }); }}>Today</button>
+              <button style={obtn(C.col)} onClick={function(){ setAnalyticsFilters({ start: getDaysAgoISO(6), end: getTodayISO() }); }}>Last 7 Days</button>
+              <button style={obtn(C.col)} onClick={function(){ setAnalyticsFilters({ start: getDaysAgoISO(29), end: getTodayISO() }); }}>Last 30 Days</button>
+              <button style={obtn(C.soft)} onClick={function(){ setAnalyticsFilters({ start: getDaysAgoISO(29), end: getTodayISO() }); }}>Reset</button>
+            </div>
+          </div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:16}}>
+          {[
+            { label: "Registered Studies", value: analyticsPatients.length, hint: "Registry in range", tone: "#0EA5E9", bg: "#EFF6FF" },
+            { label: "Pending", value: analyticsStatusCounts.pending || 0, hint: "No draft / no final", tone: "#475569", bg: "#F8FAFC" },
+            { label: "Incomplete", value: analyticsStatusCounts.incomplete || 0, hint: "Draft exists", tone: "#C2410C", bg: "#FFF7ED" },
+            { label: "Reported", value: analyticsStatusCounts.reported || 0, hint: "Finalized studies", tone: "#15803D", bg: "#ECFDF5" },
+            { label: "Avg TAT", value: analyticsTatHours.length ? analyticsAvgTatHours.toFixed(1) + " h" : "-", hint: "Study date to final", tone: "#7C3AED", bg: "#F5F3FF" },
+            { label: "Urgent / Critical", value: analyticsUrgentCount + " / " + analyticsCriticalCount, hint: "Finalized reports", tone: "#B45309", bg: "#FFF7ED" }
+          ].map(function(card) {
+            return (
+              <div key={card.label} style={{background:card.bg,borderRadius:14,padding:"18px 18px",border:"1px solid "+card.tone+"22"}}>
+                <div style={{fontSize:11,fontWeight:800,letterSpacing:"1px",textTransform:"uppercase",color:card.tone}}>{card.label}</div>
+                <div style={{fontFamily:"'DM Serif Display',serif",fontSize:32,color:C.navy,marginTop:8,lineHeight:1}}>{card.value}</div>
+                <div style={{fontSize:11,color:C.soft,marginTop:8}}>{card.hint}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.15fr) minmax(320px,.85fr)",gap:16,alignItems:"start"}}>
+          <div style={{display:"grid",gap:16}}>
+            <div style={crd}>
+              <div style={cHd(C.col)}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Modality Workload</span></div>
+              <div style={{padding:20}}>
+                {!analyticsModalityRows.length ? (
+                  <div style={{fontSize:13,color:C.soft}}>No modality activity found in the selected date range.</div>
+                ) : (
+                  <div style={{display:"grid",gap:10}}>
+                    {analyticsModalityRows.map(function(row) {
+                      return (
+                        <div key={row.name} style={{border:"1px solid "+C.bdr,borderRadius:12,padding:"14px 15px",background:"#fff"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:10}}>
+                              <span style={{fontSize:22}}>{row.icon}</span>
+                              <div>
+                                <div style={{fontWeight:800,color:C.navy}}>{row.name}</div>
+                                <div style={{fontSize:11,color:C.soft,marginTop:3}}>{row.registered} registered studies</div>
+                              </div>
+                            </div>
+                            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                              <span style={{fontSize:10,padding:"4px 9px",borderRadius:999,background:"#F8FAFC",color:"#475569"}}>{row.pending} pending</span>
+                              <span style={{fontSize:10,padding:"4px 9px",borderRadius:999,background:"#FFF7ED",color:"#C2410C"}}>{row.incomplete} incomplete</span>
+                              <span style={{fontSize:10,padding:"4px 9px",borderRadius:999,background:"#ECFDF5",color:"#15803D"}}>{row.reported} reported</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={crd}>
+              <div style={cHd("#0EA5E9")}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Doctor Reporting Volume</span></div>
+              <div style={{padding:20}}>
+                {!analyticsDoctorRows.length ? (
+                  <div style={{fontSize:13,color:C.soft}}>No finalized reports found in this range.</div>
+                ) : (
+                  <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse"}}>
+                      <thead>
+                        <tr>
+                          <th style={{textAlign:"left",padding:"10px 8px",fontSize:11,color:C.soft,textTransform:"uppercase",letterSpacing:.7,borderBottom:"1px solid "+C.bdr}}>Doctor</th>
+                          <th style={{textAlign:"left",padding:"10px 8px",fontSize:11,color:C.soft,textTransform:"uppercase",letterSpacing:.7,borderBottom:"1px solid "+C.bdr}}>Reported</th>
+                          <th style={{textAlign:"left",padding:"10px 8px",fontSize:11,color:C.soft,textTransform:"uppercase",letterSpacing:.7,borderBottom:"1px solid "+C.bdr}}>Urgent</th>
+                          <th style={{textAlign:"left",padding:"10px 8px",fontSize:11,color:C.soft,textTransform:"uppercase",letterSpacing:.7,borderBottom:"1px solid "+C.bdr}}>Modalities</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {analyticsDoctorRows.slice(0, 10).map(function(row) {
+                          return (
+                            <tr key={row.name}>
+                              <td style={{padding:"11px 8px",borderBottom:"1px solid "+C.bdr,fontWeight:700,color:C.navy}}>{row.name}</td>
+                              <td style={{padding:"11px 8px",borderBottom:"1px solid "+C.bdr,fontSize:13,color:C.txt}}>{row.reported}</td>
+                              <td style={{padding:"11px 8px",borderBottom:"1px solid "+C.bdr,fontSize:13,color:C.txt}}>{row.urgent}</td>
+                              <td style={{padding:"11px 8px",borderBottom:"1px solid "+C.bdr,fontSize:13,color:C.txt}}>{row.modalityCount}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div style={{display:"grid",gap:16}}>
+            <div style={crd}>
+              <div style={cHd(C.warn)}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Pending and Incomplete Studies</span></div>
+              <div style={{padding:20}}>
+                {!analyticsPendingStudies.length ? (
+                  <div style={{fontSize:13,color:C.soft}}>No pending or incomplete studies in this range.</div>
+                ) : (
+                  <div style={{display:"grid",gap:10}}>
+                    {analyticsPendingStudies.map(function(row) {
+                      return (
+                        <div key={row.patient.id} style={{border:"1px solid "+C.bdr,borderRadius:12,padding:"13px 14px",background:"#fff"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+                            <div>
+                              <div style={{fontWeight:800,color:C.navy,fontSize:14}}>{composeRegisteredPatientName(row.patient) || "Unnamed patient"}</div>
+                              <div style={{fontSize:11,color:C.soft,marginTop:4}}>
+                                {(row.patient.studyDate || "No date")} · {(row.patient.requestedModality || "Modality n/a")} · {(row.patient.requestedRegion || "Region n/a")}
+                              </div>
+                            </div>
+                            <span style={{fontSize:10,padding:"4px 9px",borderRadius:999,background:row.status.background,border:"1px solid "+row.status.border,color:row.status.color,fontWeight:800}}>{row.status.label}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={crd}>
+              <div style={cHd(C.ok)}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Recent Finalized Activity</span></div>
+              <div style={{padding:20}}>
+                {!analyticsRecords.length ? (
+                  <div style={{fontSize:13,color:C.soft}}>No finalized reports in the selected range.</div>
+                ) : (
+                  <div style={{display:"grid",gap:10}}>
+                    {analyticsRecords.slice(0, 8).map(function(record) {
+                      return (
+                        <div key={record.id} style={{border:"1px solid "+C.bdr,borderRadius:12,padding:"13px 14px",background:"#fff"}}>
+                          <div style={{fontWeight:800,color:C.navy,fontSize:14}}>{(record.patient && record.patient.name) || record.label || "Unnamed patient"}</div>
+                          <div style={{fontSize:11,color:C.soft,marginTop:4}}>{record.modality || "Modality"} · {record.region || "Region"} · {formatRecordListDate(record)}</div>
+                          <div style={{fontSize:11,color:C.soft,marginTop:4}}>Reported by {((record.patient && record.patient.reportingDoc) || (record.finalizedMeta && record.finalizedMeta.by) || "Unassigned")}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 
@@ -7157,6 +7582,7 @@ function RadReport() {
       <AppHdr onBack backTo={reportingBackStep || "home"} setStep={setStep} sub="Reporting Queue"
         right={<div style={{display:"flex",gap:10,alignItems:"center"}}>
           <button style={obtn("#fff")} onClick={function(){ openPatientRegistry("reporting"); }}>Patient Registry</button>
+          <button style={obtn("#fff")} onClick={function(){ openAnalytics("reporting"); }}>Analytics</button>
           <button style={obtn("#fff")} onClick={function(){ openRecords("reporting"); }}>Record Book</button>
         </div>}
       />
@@ -7618,6 +8044,70 @@ function RadReport() {
             </div>
           </div>
         </div>
+        {!!availableGuidelinePacks.length && (
+          <div style={crd}>
+            <div style={cHd("#7C3AED")}><span style={{fontSize:20}}>🧭</span><b style={{color:C.navy,fontSize:15}}>Guideline Assist</b></div>
+            <div style={{padding:20}}>
+              <div style={{fontSize:12,color:C.soft,marginBottom:14}}>
+                Select the relevant category and insert editable suggestion text into Impression and Recommendations. These are guidance shortcuts, not locked outputs.
+              </div>
+              <div style={{display:"grid",gap:12}}>
+                {availableGuidelinePacks.map(function(pack) {
+                  var selectedValue = guidelineSelections[pack.id] || "";
+                  var selectedOption = (pack.options || []).find(function(option) { return option.value === selectedValue; }) || null;
+                  return (
+                    <div key={pack.id} style={{border:"1px solid #DDD6FE",borderRadius:14,padding:"15px 16px",background:"#FAF5FF"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:12}}>
+                        <div>
+                          <div style={{fontWeight:800,fontSize:14,color:C.navy}}>{pack.label}</div>
+                          <div style={{fontSize:11,color:C.soft,marginTop:3}}>{pack.subtitle}</div>
+                        </div>
+                        <div style={{minWidth:220,flex:"1 1 220px"}}>
+                          <label style={lbl}>Category</label>
+                          <select
+                            className="ri"
+                            style={inp({cursor:"pointer",background:"#fff"})}
+                            value={selectedValue}
+                            onChange={function(e){
+                              var nextValue = e.target.value;
+                              setGuidelineSelections(function(prev) {
+                                var next = Object.assign({}, prev);
+                                next[pack.id] = nextValue;
+                                return next;
+                              });
+                            }}
+                          >
+                            <option value="">Select {pack.label}</option>
+                            {(pack.options || []).map(function(option) {
+                              return <option key={option.value} value={option.value}>{option.value}</option>;
+                            })}
+                          </select>
+                        </div>
+                      </div>
+                      {selectedOption && (
+                        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12}}>
+                          <div style={{padding:"12px 13px",borderRadius:10,background:"#fff",border:"1px solid #E9D5FF"}}>
+                            <div style={{fontSize:10,fontWeight:800,letterSpacing:".8px",textTransform:"uppercase",color:"#6D28D9",marginBottom:6}}>Suggested Impression</div>
+                            <div style={{fontSize:12,color:C.txt,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{selectedOption.impression}</div>
+                          </div>
+                          <div style={{padding:"12px 13px",borderRadius:10,background:"#fff",border:"1px solid #E9D5FF"}}>
+                            <div style={{fontSize:10,fontWeight:800,letterSpacing:".8px",textTransform:"uppercase",color:"#6D28D9",marginBottom:6}}>Suggested Recommendation</div>
+                            <div style={{fontSize:12,color:C.txt,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{selectedOption.recommendation}</div>
+                          </div>
+                        </div>
+                      )}
+                      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
+                        <button style={obtn("#7C3AED")} onClick={function(){ applyGuidelineAssist(pack, "impression"); }}>Insert Impression</button>
+                        <button style={obtn("#7C3AED")} onClick={function(){ applyGuidelineAssist(pack, "recommendation"); }}>Insert Recommendation</button>
+                        <button style={btn("linear-gradient(135deg,#7C3AED,#8B5CF6)")} onClick={function(){ applyGuidelineAssist(pack, "both"); }}>Use Both</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
         <div style={crd}>
           <div style={cHd(C.col)}><span style={{fontSize:20}}>📋</span><b style={{color:C.navy,fontSize:15}}>Impression / Conclusion</b></div>
           <div style={{padding:20}}>
@@ -7685,6 +8175,7 @@ function RadReport() {
       <AppHdr onBack backTo={recordBackStep || "home"} setStep={setStep} sub="Record Book"
         right={<div style={{display:"flex",gap:10,alignItems:"center"}}>
           <span style={{fontSize:12,color:"rgba(255,255,255,.6)"}}>{syncingRecords ? "Syncing..." : "Cloud sync idle"}</span>
+          <button style={obtn("#fff")} onClick={function(){ openAnalytics("records"); }}>Analytics</button>
           <button style={obtn("#fff")} onClick={function(){ persistAllRecords(savedRecords); }}>Sync Now</button>
           {selectedRecord && <button style={obtn("#fff")} onClick={function(){ loadRecordIntoWorkspace(selectedRecord, "preview"); }}>Open Preview</button>}
         </div>}
