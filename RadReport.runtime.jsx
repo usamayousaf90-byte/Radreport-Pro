@@ -3799,7 +3799,9 @@ function makeEmptyPatient() {
     clinicalInfo: "",
     studyDate: getTodayISO(),
     reportingDoc: "",
-    institution: ""
+    institution: "",
+    portalUsername: "",
+    portalPassword: ""
   };
 }
 
@@ -4009,6 +4011,45 @@ function buildSequentialMrno(studyDate, existingPatients, currentId) {
   return prefix + String(maxSeq + 1).padStart(4, "0");
 }
 
+function normalizePortalUsername(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "");
+}
+
+function buildPortalUsernameBase(patient) {
+  var baseName = [patient && patient.firstName, patient && patient.lastName, patient && patient.name]
+    .join(" ")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .slice(0, 8);
+  var mrnoDigits = String(patient && patient.mrno || "").replace(/[^0-9]/g, "");
+  var cellDigits = String(patient && patient.cell || "").replace(/[^0-9]/g, "");
+  var suffix = (mrnoDigits || cellDigits || String(Date.now())).slice(-4);
+  return normalizePortalUsername((baseName || "patient") + suffix);
+}
+
+function buildPortalUsername(patient, existingPatients, currentId) {
+  var base = buildPortalUsernameBase(patient);
+  var taken = new Set((Array.isArray(existingPatients) ? existingPatients : []).map(function(item) {
+    if (!item || (currentId && item.id === currentId)) return "";
+    return normalizePortalUsername(item.portalUsername);
+  }).filter(Boolean));
+  var candidate = base;
+  var suffix = 1;
+  while (!candidate || taken.has(candidate)) {
+    candidate = base + String(suffix).padStart(2, "0");
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function buildPortalPassword() {
+  var seed = (Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).replace(/[^a-z0-9]/gi, "");
+  return (seed.slice(0, 8) || "RRP2026").toUpperCase();
+}
+
 function makeEmptyRegistryPatient() {
   return {
     id: "",
@@ -4031,7 +4072,9 @@ function makeEmptyRegistryPatient() {
     refBy: "",
     studyDate: getTodayISO(),
     requestedModality: "",
-    requestedRegion: ""
+    requestedRegion: "",
+    portalUsername: "",
+    portalPassword: ""
   };
 }
 
@@ -4107,10 +4150,75 @@ function normalizeRegistryPatient(rawPatient) {
   normalized.studyDate = String(normalized.studyDate || source.StudyDate || source.VisitDate || source.Date || getTodayISO()).trim() || getTodayISO();
   normalized.requestedModality = normalizeTemplateModality(normalized.requestedModality || source.RequestedModality || source.Modality || source.StudyModality || "");
   normalized.requestedRegion = matchRegionForModality(normalized.requestedModality, normalized.requestedRegion || source.RequestedRegion || source.Region || source.StudyRegion || "");
+  normalized.portalUsername = normalizePortalUsername(normalized.portalUsername || source.PortalUsername || source.PatientPortalUsername || "");
+  normalized.portalPassword = String(normalized.portalPassword || source.PortalPassword || source.PatientPortalPassword || "").trim();
   normalized.id = String(normalized.id || source.PatientId || source.RegID || source.PatID || makePatientRegistryId(normalized)).trim();
   normalized.name = composeRegisteredPatientName(normalized);
   if (!normalized.age && normalized.dob) normalized.age = calculateAgeTextFromDOB(normalized.dob);
   return normalized;
+}
+
+function prepareRegistryPatientForSave(rawPatient, existingPatients) {
+  var regPatient = normalizeRegistryPatient(rawPatient);
+  if (!regPatient.mrno) regPatient.mrno = buildSequentialMrno(regPatient.studyDate, existingPatients, regPatient.id);
+  if (!regPatient.portalUsername) regPatient.portalUsername = buildPortalUsername(regPatient, existingPatients, regPatient.id);
+  if (!regPatient.portalPassword) regPatient.portalPassword = buildPortalPassword();
+  regPatient.name = composeRegisteredPatientName(regPatient);
+  if (!regPatient.id) regPatient.id = makePatientRegistryId(regPatient);
+  return regPatient;
+}
+
+function findMatchingRegistryPatient(list, patientLike) {
+  var target = patientLike && typeof patientLike === "object" ? patientLike : {};
+  var targetId = String(target.id || target.registryPatientId || "").trim().toLowerCase();
+  var targetMrno = String(target.mrno || target.MRNO || "").trim().toLowerCase();
+  var targetCell = String(target.cell || target.Cell || "").trim();
+  var targetName = String(composeRegisteredPatientName(target) || target.name || "").trim().toLowerCase();
+  return (Array.isArray(list) ? list : []).find(function(item) {
+    if (!item) return false;
+    if (targetId && String(item.id || "").trim().toLowerCase() === targetId) return true;
+    if (targetMrno && String(item.mrno || "").trim().toLowerCase() === targetMrno) return true;
+    if (targetCell && String(item.cell || "").trim() === targetCell) {
+      var itemName = composeRegisteredPatientName(item).toLowerCase();
+      return !targetName || itemName === targetName;
+    }
+    return false;
+  }) || null;
+}
+
+function makeEmptySharedPortalState(overrides) {
+  return Object.assign({
+    loading: false,
+    error: "",
+    meta: null,
+    payload: null,
+    token: "",
+    username: "",
+    password: "",
+    authenticated: false,
+    source: "link"
+  }, overrides || {});
+}
+
+function makeEmptyPatientPortalState(overrides) {
+  return Object.assign({
+    loading: false,
+    error: "",
+    username: "",
+    password: "",
+    authenticated: false,
+    patient: null,
+    reports: []
+  }, overrides || {});
+}
+
+function escapeHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function seedUsers() {
@@ -4284,6 +4392,37 @@ async function cloudLoadSharedReport(token) {
   return data;
 }
 
+async function cloudLoginPatientPortal(username, password) {
+  var res = await fetch("/api/share", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "portalLogin",
+      username: username || "",
+      password: password || ""
+    })
+  });
+  var data = await res.json().catch(function() { return {}; });
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Portal login failed");
+  return data;
+}
+
+async function cloudAuthenticateSharedReport(token, username, password) {
+  var res = await fetch("/api/share", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "authenticate",
+      token: token || "",
+      username: username || "",
+      password: password || ""
+    })
+  });
+  var data = await res.json().catch(function() { return {}; });
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Portal login failed");
+  return data;
+}
+
 async function cloudSaveSharedReport(owner, record, token, origin) {
   var res = await fetch("/api/share", {
     method: "PUT",
@@ -4303,6 +4442,11 @@ async function cloudSaveSharedReport(owner, record, token, origin) {
 function buildSharedPortalUrl(token, origin) {
   var safeOrigin = String(origin || (typeof window !== "undefined" && window.location ? window.location.origin : "") || "").replace(/\/+$/g, "");
   return (safeOrigin || "") + "/?share=" + encodeURIComponent(String(token || "").trim());
+}
+
+function buildPatientPortalUrl(username, origin) {
+  var safeOrigin = String(origin || (typeof window !== "undefined" && window.location ? window.location.origin : "") || "").replace(/\/+$/g, "");
+  return (safeOrigin || "") + "/?portal=" + encodeURIComponent(normalizePortalUsername(username));
 }
 
 function buildShareQrUrl(url) {
@@ -4331,11 +4475,15 @@ function buildShareableRecordPayload(record) {
       mrno: patient.mrno || "",
       age: patient.age || "",
       sex: patient.sex || "",
+      cell: patient.cell || "",
+      fatherName: patient.fatherName || "",
       refBy: patient.refBy || "",
       reportingDoc: patient.reportingDoc || "",
       studyDate: patient.studyDate || "",
       clinicalInfo: patient.clinicalInfo || "",
-      institution: patient.institution || ""
+      institution: patient.institution || "",
+      portalUsername: patient.portalUsername || "",
+      portalPassword: patient.portalPassword || ""
     }
   };
 }
@@ -5621,7 +5769,8 @@ function RadReport() {
   var [doctorPanelTab, setDoctorPanelTab] = useState("list");
   var [guidelineSelections, setGuidelineSelections] = useState({});
   var [shareDialog, setShareDialog] = useState({ open: false, loading: false, error: "", url: "", qrUrl: "", expiresAt: "", token: "", title: "" });
-  var [sharedPortalState, setSharedPortalState] = useState({ loading: false, error: "", payload: null, token: "" });
+  var [sharedPortalState, setSharedPortalState] = useState(makeEmptySharedPortalState);
+  var [patientPortalState, setPatientPortalState] = useState(makeEmptyPatientPortalState);
   var importedTemplateSeedRef = useRef("");
   var printRef = useRef(null);
 
@@ -5656,9 +5805,11 @@ function RadReport() {
     try {
       var nextUrl = new URL(window.location.href);
       nextUrl.searchParams.delete("share");
+      nextUrl.searchParams.delete("portal");
       window.history.replaceState({}, "", nextUrl.pathname + nextUrl.search);
     } catch (e) {}
-    setSharedPortalState({ loading: false, error: "", payload: null, token: "" });
+    setSharedPortalState(makeEmptySharedPortalState());
+    setPatientPortalState(makeEmptyPatientPortalState());
     try {
       var session = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
       if (session && session.username && session.role) {
@@ -5850,6 +6001,8 @@ function RadReport() {
       next.defaultPanel = regPatient.defaultPanel || "";
       next.refBy = regPatient.refBy || "";
       next.studyDate = regPatient.studyDate || prev.studyDate;
+      next.portalUsername = regPatient.portalUsername || prev.portalUsername;
+      next.portalPassword = regPatient.portalPassword || prev.portalPassword;
       return next;
     });
     setSelectedRegistryPatientId(regPatient.id);
@@ -5898,7 +6051,7 @@ function RadReport() {
 
   var saveRegistryPatient = useCallback(function(rawPatient, quiet) {
     if (!authUser || !authUser.username) return "";
-    var regPatient = normalizeRegistryPatient(rawPatient || patientRegistryForm);
+    var regPatient = prepareRegistryPatientForSave(rawPatient || patientRegistryForm, savedPatients);
     if (!regPatient.studyDate) {
       if (!quiet) showToast("Study date is required", "error");
       return "";
@@ -5919,9 +6072,14 @@ function RadReport() {
       if (!quiet) showToast("Cell number is required", "error");
       return "";
     }
+    var existingMatch = findMatchingRegistryPatient(savedPatients, regPatient);
+    if (existingMatch) {
+      regPatient.id = existingMatch.id;
+      regPatient.portalUsername = regPatient.portalUsername || existingMatch.portalUsername || buildPortalUsername(regPatient, savedPatients, existingMatch.id);
+      regPatient.portalPassword = regPatient.portalPassword || existingMatch.portalPassword || buildPortalPassword();
+    }
     setSavedPatients(function(prev) {
       var next = prev.slice();
-      if (!regPatient.mrno) regPatient.mrno = buildSequentialMrno(regPatient.studyDate, prev, regPatient.id);
       var idx = next.findIndex(function(item) {
         if (regPatient.id && item.id === regPatient.id) return true;
         var sameStudy = (item.studyDate || "") === regPatient.studyDate && (item.requestedModality || "") === regPatient.requestedModality && (item.requestedRegion || "") === regPatient.requestedRegion;
@@ -5946,8 +6104,8 @@ function RadReport() {
     setSelectedRegistryPatientId(regPatient.id);
     setPatientRegistryForm(makeEmptyRegistryPatient());
     if (!quiet) showToast("Patient saved in registry: " + regPatient.mrno, "success");
-    return regPatient.id;
-  }, [authUser, patientRegistryForm, persistAllPatients, showToast]);
+    return regPatient;
+  }, [authUser, patientRegistryForm, persistAllPatients, savedPatients, showToast]);
 
   var deleteRegistryPatient = useCallback(function(id) {
     if (!id) return;
@@ -6169,7 +6327,30 @@ function RadReport() {
     });
     try {
       var existingShare = sourceRecord.sharePortal || {};
-      var sharePayload = buildShareableRecordPayload(sourceRecord);
+      var registryMatch = findMatchingRegistryPatient(savedPatients, sourceRecord.patient || {});
+      var sharePatient = Object.assign({}, sourceRecord.patient || {});
+      if (registryMatch) {
+        var registryPortal = Object.assign({}, registryMatch);
+        if (!registryPortal.portalUsername) registryPortal.portalUsername = buildPortalUsername(registryPortal, savedPatients, registryPortal.id);
+        if (!registryPortal.portalPassword) registryPortal.portalPassword = buildPortalPassword();
+        if (registryPortal.portalUsername !== registryMatch.portalUsername || registryPortal.portalPassword !== registryMatch.portalPassword) {
+          var nextPatients = savedPatients.map(function(item) {
+            return item && item.id === registryPortal.id ? Object.assign({}, item, registryPortal) : item;
+          });
+          setSavedPatients(nextPatients);
+          persistAllPatients(nextPatients);
+        }
+        sharePatient = Object.assign({}, registryMatch, sharePatient, {
+          portalUsername: sharePatient.portalUsername || registryPortal.portalUsername || "",
+          portalPassword: sharePatient.portalPassword || registryPortal.portalPassword || "",
+          fatherName: sharePatient.fatherName || registryPortal.fatherName || "",
+          cell: sharePatient.cell || registryPortal.cell || ""
+        });
+      }
+      if (!sharePatient.portalUsername || !sharePatient.portalPassword) {
+        throw new Error("Patient portal username/password are missing. Save the patient in Patient Registry first.");
+      }
+      var sharePayload = buildShareableRecordPayload(Object.assign({}, sourceRecord, { patient: sharePatient }));
       var shareResult = await cloudSaveSharedReport(authUser && authUser.username ? authUser.username : "", sharePayload, existingShare.token || "", window.location.origin);
       var shareUrl = shareResult.url || buildSharedPortalUrl(shareResult.token, window.location.origin);
       var sharePortal = {
@@ -6213,7 +6394,7 @@ function RadReport() {
       });
       showToast(errMsg, "error");
     }
-  }, [authUser, persistAllRecords, showToast]);
+  }, [authUser, persistAllPatients, persistAllRecords, savedPatients, showToast]);
 
   var shareCurrentPreview = useCallback(function() {
     if (!finalizedMeta) {
@@ -6224,6 +6405,159 @@ function RadReport() {
     var sourceRecord = existingRecord || buildRecordSnapshot(finalizedMeta);
     openShareDialogForRecord(sourceRecord);
   }, [finalizedMeta, savedRecords, selectedRecordId, buildRecordSnapshot, openShareDialogForRecord, showToast]);
+
+  var handleSharedPortalLogin = useCallback(async function(nextToken, nextUsername, nextPassword, sourceMode) {
+    var token = String(nextToken || sharedPortalState.token || "").trim();
+    var username = normalizePortalUsername(nextUsername || sharedPortalState.username || "");
+    var password = String(nextPassword || sharedPortalState.password || "").trim();
+    if (!token) {
+      showToast("Share link is missing", "error");
+      return;
+    }
+    if (!username || !password) {
+      showToast("Enter the patient portal username and password", "error");
+      return;
+    }
+    setSharedPortalState(function(prev) {
+      return Object.assign({}, prev, {
+        loading: true,
+        error: "",
+        token: token,
+        username: username,
+        password: password
+      });
+    });
+    try {
+      var payload = await cloudAuthenticateSharedReport(token, username, password);
+      try {
+        var nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set("share", token);
+        if (sourceMode === "portal") nextUrl.searchParams.set("portal", username);
+        window.history.replaceState({}, "", nextUrl.pathname + nextUrl.search);
+      } catch (e) {}
+      setSharedPortalState(function(prev) {
+        return Object.assign({}, prev, {
+          loading: false,
+          error: "",
+          meta: prev.meta || { expiresAt: payload.expiresAt || "" },
+          payload: payload,
+          token: token,
+          username: username,
+          password: password,
+          authenticated: true,
+          source: sourceMode || prev.source || "link"
+        });
+      });
+      setStep("shared");
+      showToast("Secure report access granted", "success");
+    } catch (e) {
+      setSharedPortalState(function(prev) {
+        return Object.assign({}, prev, {
+          loading: false,
+          error: e && e.message ? e.message : "Portal login failed",
+          payload: null,
+          authenticated: false,
+          username: username,
+          password: password
+        });
+      });
+      showToast(e && e.message ? e.message : "Portal login failed", "error");
+    }
+  }, [sharedPortalState.token, sharedPortalState.username, sharedPortalState.password, showToast]);
+
+  var handlePatientPortalLogin = useCallback(async function() {
+    var username = normalizePortalUsername(patientPortalState.username || "");
+    var password = String(patientPortalState.password || "").trim();
+    if (!username || !password) {
+      showToast("Enter the patient portal username and password", "error");
+      return;
+    }
+    setPatientPortalState(function(prev) {
+      return Object.assign({}, prev, {
+        loading: true,
+        error: "",
+        username: username
+      });
+    });
+    try {
+      var result = await cloudLoginPatientPortal(username, password);
+      var portal = result && result.portal ? result.portal : {};
+      try {
+        var nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.delete("share");
+        nextUrl.searchParams.set("portal", username);
+        window.history.replaceState({}, "", nextUrl.pathname + nextUrl.search);
+      } catch (e) {}
+      setPatientPortalState({
+        loading: false,
+        error: "",
+        username: username,
+        password: password,
+        authenticated: true,
+        patient: portal.patient || null,
+        reports: Array.isArray(portal.reports) ? portal.reports : []
+      });
+      showToast("Patient portal ready", "success");
+    } catch (e) {
+      setPatientPortalState(function(prev) {
+        return Object.assign({}, prev, {
+          loading: false,
+          error: e && e.message ? e.message : "Portal login failed",
+          authenticated: false,
+          reports: []
+        });
+      });
+      showToast(e && e.message ? e.message : "Portal login failed", "error");
+    }
+  }, [patientPortalState.username, patientPortalState.password, showToast]);
+
+  var openPatientPortalReport = useCallback(function(entry) {
+    if (!entry || !entry.token) {
+      showToast("Shared report is unavailable", "error");
+      return;
+    }
+    handleSharedPortalLogin(entry.token, patientPortalState.username, patientPortalState.password, "portal");
+  }, [handleSharedPortalLogin, patientPortalState.username, patientPortalState.password, showToast]);
+
+  var printPatientPortalSlip = useCallback(function(rawPatient) {
+    var savedPatient = saveRegistryPatient(rawPatient || patientRegistryForm, true);
+    if (!savedPatient) return;
+    var portalUrl = buildPatientPortalUrl(savedPatient.portalUsername, window.location.origin);
+    var qrUrl = buildShareQrUrl(portalUrl);
+    var popup = window.open("", "_blank", "width=920,height=720");
+    if (!popup) {
+      showToast("Allow pop-ups to print the portal slip", "error");
+      return;
+    }
+    var rows = [
+      ["Name", composeRegisteredPatientName(savedPatient) || "—"],
+      ["Father / Husband", savedPatient.fatherName || "—"],
+      ["Portal Username", savedPatient.portalUsername || "—"],
+      ["Portal Password", savedPatient.portalPassword || "—"],
+      ["Modality", savedPatient.requestedModality || "—"],
+      ["Age", savedPatient.age || "—"],
+      ["Mobile", savedPatient.cell || "—"],
+      ["Portal", portalUrl || "—"]
+    ];
+    popup.document.write(
+      "<!doctype html><html><head><meta charset=\"utf-8\"><title>Patient Portal Slip</title>" +
+      "<style>body{font-family:Arial,sans-serif;background:#f8fafc;margin:0;padding:28px;color:#0f172a} .sheet{max-width:820px;margin:0 auto;background:#fff;border:1px solid #cbd5e1;border-radius:18px;padding:28px 32px;box-shadow:0 20px 50px rgba(15,23,42,.08)} .head{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;margin-bottom:24px} .title{font-size:30px;font-weight:700;color:#0d2137;margin-bottom:6px} .sub{font-size:12px;letter-spacing:1.4px;text-transform:uppercase;color:#64748b} table{width:100%;border-collapse:collapse;margin-top:10px} td{border-bottom:1px solid #e2e8f0;padding:11px 0;font-size:14px;vertical-align:top} td:first-child{width:190px;font-size:12px;font-weight:700;text-transform:uppercase;color:#475569;letter-spacing:.6px} .qr{text-align:center} .qr img{width:210px;height:210px;border:1px solid #cbd5e1;border-radius:14px;padding:12px;background:#fff} .note{margin-top:22px;font-size:12px;line-height:1.7;color:#475569}</style></head><body>" +
+      "<div class=\"sheet\"><div class=\"head\"><div><div class=\"title\">RadReport Pro</div><div class=\"sub\">Patient Portal Access Slip</div><div style=\"margin-top:12px;font-size:13px;color:#334155\">MRNO: <b>" + escapeHtml(savedPatient.mrno || "—") + "</b></div></div><div class=\"qr\"><img src=\"" + escapeHtml(qrUrl) + "\" alt=\"Portal QR code\"><div style=\"margin-top:10px;font-size:12px;color:#475569\">Scan to open the patient portal</div></div></div>" +
+      "<table><tbody>" +
+      rows.map(function(row) {
+        return "<tr><td>" + escapeHtml(row[0]) + "</td><td>" + escapeHtml(row[1]) + "</td></tr>";
+      }).join("") +
+      "</tbody></table><div class=\"note\">Use the printed portal username and password to open shared reports. Keep this slip with the patient documents.</div></div></body></html>"
+    );
+    popup.document.close();
+    setTimeout(function() {
+      try {
+        popup.focus();
+        popup.print();
+      } catch (e) {}
+    }, 250);
+    showToast("Portal slip ready to print", "success");
+  }, [patientRegistryForm, saveRegistryPatient, showToast]);
 
   var finalizeReport = useCallback(function() {
     if (!canFinalize) {
@@ -6396,7 +6730,8 @@ function RadReport() {
     setShortcutEditor(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
     setGuidelineSelections({});
     setShareDialog({ open: false, loading: false, error: "", url: "", qrUrl: "", expiresAt: "", token: "", title: "" });
-    setSharedPortalState({ loading: false, error: "", payload: null, token: "" });
+    setSharedPortalState(makeEmptySharedPortalState());
+    setPatientPortalState(makeEmptyPatientPortalState());
     setActiveDraftId(null);
     setStep("login");
   }, []);
@@ -6638,20 +6973,36 @@ function RadReport() {
     setUsers(all);
     setDoctorDirectory(loadDoctorDirectory());
     var shareToken = "";
+    var portalUsername = "";
     try {
-      shareToken = String((new URLSearchParams(window.location.search || "")).get("share") || "").trim();
+      var params = new URLSearchParams(window.location.search || "");
+      shareToken = String(params.get("share") || "").trim();
+      portalUsername = normalizePortalUsername(params.get("portal") || "");
     } catch (e) {}
     if (shareToken) {
-      setSharedPortalState({ loading: true, error: "", payload: null, token: shareToken });
+      setSharedPortalState(makeEmptySharedPortalState({ loading: true, token: shareToken }));
       setStep("shared");
       (async function() {
         try {
           var sharedPayload = await cloudLoadSharedReport(shareToken);
-          setSharedPortalState({ loading: false, error: "", payload: sharedPayload, token: shareToken });
+          setSharedPortalState(makeEmptySharedPortalState({
+            loading: false,
+            token: shareToken,
+            meta: sharedPayload
+          }));
         } catch (e) {
-          setSharedPortalState({ loading: false, error: e && e.message ? e.message : "Shared report unavailable", payload: null, token: shareToken });
+          setSharedPortalState(makeEmptySharedPortalState({
+            loading: false,
+            error: e && e.message ? e.message : "Shared report unavailable",
+            token: shareToken
+          }));
         }
       })();
+      return;
+    }
+    if (portalUsername) {
+      setPatientPortalState(makeEmptyPatientPortalState({ username: portalUsername }));
+      setStep("portal");
       return;
     }
     try {
@@ -6995,6 +7346,7 @@ function RadReport() {
     return composeRegisteredPatientName(a).localeCompare(composeRegisteredPatientName(b));
   });
   var selectedRegistryPatient = filteredRegistryPatients.find(function(item) { return item.id === selectedRegistryPatientId; }) || savedPatients.find(function(item) { return item.id === selectedRegistryPatientId; }) || null;
+  var portalPreviewPatient = (patientRegistryForm && (patientRegistryForm.portalUsername || patientRegistryForm.portalPassword)) ? patientRegistryForm : selectedRegistryPatient;
   var reportingQ = reportingQuery.trim().toLowerCase();
   var filteredReportingPatients = savedPatients.filter(function(item) {
     if (!reportingModality) return false;
@@ -7358,6 +7710,7 @@ function RadReport() {
       </div>
     </div>
   ) : null;
+  var sharedPortalMeta = sharedPortalState && sharedPortalState.meta ? sharedPortalState.meta : null;
   var sharedPortalRecord = sharedPortalState && sharedPortalState.payload ? sharedPortalState.payload.report : null;
   var sharedPortalSections = getRecordSections(sharedPortalRecord);
   var sharedPortalHasAbn = sharedPortalRecord ? Object.keys(sharedPortalRecord.tags || {}).some(function(key) { return sharedPortalRecord.tags[key] === "ab"; }) : false;
@@ -7367,16 +7720,120 @@ function RadReport() {
     return hay.indexOf(shortcutQ) !== -1;
   }) : customShortcuts).slice(0, 120);
 
+  if (step === "portal") return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.bg,minHeight:"100vh"}}>
+      <style>{CSS}</style>
+      <Toast msg={toast&&toast.msg} type={toast&&toast.type} onClose={function(){setToast(null);}} />
+      <div className="np" style={{background:"linear-gradient(135deg,#0D2137,#1A3A5C)",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",height:64,boxShadow:"0 2px 12px rgba(0,0,0,.25)"}}>
+        <div>
+          <div style={{fontFamily:"'DM Serif Display',serif",fontSize:22,color:"#fff"}}>RadReport Pro</div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,.5)",letterSpacing:2,textTransform:"uppercase"}}>Patient Portal</div>
+        </div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          <button style={btn(C.col, "#fff")} onClick={exitSharedPortal}>Open App</button>
+        </div>
+      </div>
+      <div style={pg}>
+        {!patientPortalState.authenticated && (
+          <div style={{maxWidth:520,margin:"0 auto",background:"#fff",border:"1px solid "+C.bdr,borderRadius:18,padding:"28px 28px 26px"}}>
+            <div style={{fontFamily:"'DM Serif Display',serif",fontSize:30,color:C.navy,marginBottom:10}}>Patient Portal Login</div>
+            <div style={{fontSize:14,color:C.soft,lineHeight:1.7,marginBottom:16}}>
+              Use the username and password printed on the patient portal slip from registration.
+            </div>
+            <label style={lbl}>Portal Username</label>
+            <input className="ri" style={inp({marginBottom:12})} value={patientPortalState.username || ""} onChange={function(e){
+              var nextValue = normalizePortalUsername(e.target.value);
+              setPatientPortalState(function(prev) { return Object.assign({}, prev, { username: nextValue, error: "" }); });
+            }} placeholder="e.g. patient0001" />
+            <label style={lbl}>Password</label>
+            <input type="password" className="ri" style={inp({marginBottom:14})} value={patientPortalState.password || ""} onChange={function(e){
+              var nextValue = e.target.value;
+              setPatientPortalState(function(prev) { return Object.assign({}, prev, { password: nextValue, error: "" }); });
+            }} placeholder="••••••••" />
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <button style={btn(C.col)} onClick={handlePatientPortalLogin} disabled={patientPortalState.loading}>
+                {patientPortalState.loading ? "Signing In..." : "Open Patient Portal"}
+              </button>
+              <button style={obtn(C.soft)} onClick={exitSharedPortal}>Back to App</button>
+            </div>
+            {!!patientPortalState.error && (
+              <div style={{marginTop:14,padding:"10px 12px",borderRadius:10,border:"1px solid #FECACA",background:"#FEF2F2",color:"#991B1B",fontSize:13}}>
+                {patientPortalState.error}
+              </div>
+            )}
+          </div>
+        )}
+
+        {patientPortalState.authenticated && (
+          <div style={{display:"grid",gap:18}}>
+            <div style={Object.assign({}, crd, {padding:0, overflow:"hidden"})}>
+              <div style={{background:"linear-gradient(135deg,#0D2137,#1A3A5C)",padding:"20px 24px"}}>
+                <div style={{fontFamily:"'DM Serif Display',serif",fontSize:24,color:"#fff"}}>{(patientPortalState.patient && patientPortalState.patient.name) || "Patient Portal"}</div>
+                <div style={{fontSize:12,color:"rgba(255,255,255,.55)",marginTop:4}}>Secure access to shared radiology reports</div>
+              </div>
+              <div style={{padding:"16px 24px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14}}>
+                {[["MRNO", patientPortalState.patient && patientPortalState.patient.mrno],["Father / Husband", patientPortalState.patient && patientPortalState.patient.fatherName],["Age", patientPortalState.patient && patientPortalState.patient.age],["Mobile", patientPortalState.patient && patientPortalState.patient.cell]].map(function(row) {
+                  return (
+                    <div key={row[0]}>
+                      <div style={{fontSize:10,fontWeight:700,color:C.soft,textTransform:"uppercase",letterSpacing:1}}>{row[0]}</div>
+                      <div style={{marginTop:4,fontSize:15,fontWeight:700,color:C.navy}}>{row[1] || "—"}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={crd}>
+              <div style={cHd(C.col)}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Available Shared Reports</span></div>
+              <div style={{padding:18}}>
+                {!patientPortalState.reports.length && (
+                  <div style={{padding:"18px 16px",border:"1px solid "+C.bdr,borderRadius:12,color:C.soft,background:"#fff"}}>
+                    No shared reports are available for this patient yet.
+                  </div>
+                )}
+                <div style={{display:"grid",gap:12}}>
+                  {patientPortalState.reports.map(function(entry) {
+                    return (
+                      <div key={entry.token} style={{border:"1px solid "+C.bdr,borderRadius:14,padding:"14px 16px",background:"#fff"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",gap:14,alignItems:"flex-start",flexWrap:"wrap"}}>
+                          <div>
+                            <div style={{fontWeight:800,fontSize:15,color:C.navy}}>{entry.label || "Shared report"}</div>
+                            <div style={{fontSize:12,color:C.soft,marginTop:4}}>{entry.studyDate || "—"} · {entry.modality || "—"} · {entry.region || "—"}</div>
+                            <div style={{fontSize:11,color:C.soft,marginTop:4}}>Shared until {entry.expiresAt ? new Date(entry.expiresAt).toLocaleString() : "—"}</div>
+                          </div>
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            <span style={{fontSize:10,padding:"4px 10px",borderRadius:20,background:entry.urgency==="Routine"?"#E8F8F2":entry.urgency==="Urgent"?"#FFF3D8":"#FEECEC",color:entry.urgency==="Routine"?C.ok:entry.urgency==="Urgent"?C.warn:C.err,fontWeight:800}}>
+                              {String(entry.urgency || "Routine").toUpperCase()}
+                            </span>
+                            <button style={obtn(C.col)} onClick={function(){ openPatientPortalReport(entry); }}>Open Report</button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   if (step === "shared") return (
     <div style={{fontFamily:"'DM Sans',sans-serif",background:C.bg,minHeight:"100vh"}}>
       <style>{CSS}</style>
+      <Toast msg={toast&&toast.msg} type={toast&&toast.type} onClose={function(){setToast(null);}} />
       <div className="np" style={{background:"linear-gradient(135deg,#0D2137,#1A3A5C)",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",height:64,boxShadow:"0 2px 12px rgba(0,0,0,.25)"}}>
         <div>
           <div style={{fontFamily:"'DM Serif Display',serif",fontSize:22,color:"#fff"}}>RadReport Pro</div>
           <div style={{fontSize:11,color:"rgba(255,255,255,.5)",letterSpacing:2,textTransform:"uppercase"}}>Shared Report Portal</div>
         </div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-          <button style={obtn("#fff")} onClick={function(){ window.print(); }}>Print / PDF</button>
+          {patientPortalState.authenticated && sharedPortalState.source === "portal" && (
+            <button style={obtn("#fff")} onClick={function(){ setStep("portal"); }}>Portal Home</button>
+          )}
+          {sharedPortalRecord && <button style={obtn("#fff")} onClick={function(){ window.print(); }}>Print / PDF</button>}
           <button style={btn(C.col, "#fff")} onClick={exitSharedPortal}>Open App</button>
         </div>
       </div>
@@ -7386,16 +7843,46 @@ function RadReport() {
             Loading shared report...
           </div>
         )}
-        {!sharedPortalState.loading && !sharedPortalRecord && (
+        {!sharedPortalState.loading && !sharedPortalMeta && !sharedPortalRecord && (
           <div style={{background:"#fff",border:"1px solid #FECACA",borderRadius:16,padding:"30px 28px",color:"#991B1B"}}>
             <div style={{fontFamily:"'DM Serif Display',serif",fontSize:26,marginBottom:8}}>Shared Report Unavailable</div>
             <div style={{fontSize:14,lineHeight:1.7}}>{sharedPortalState.error || "This share link is invalid or has expired."}</div>
           </div>
         )}
+        {!sharedPortalState.loading && !sharedPortalRecord && !!sharedPortalMeta && (
+          <div style={{maxWidth:540,margin:"0 auto",background:"#fff",border:"1px solid "+C.bdr,borderRadius:18,padding:"28px 28px 26px"}}>
+            <div style={{fontFamily:"'DM Serif Display',serif",fontSize:30,color:C.navy,marginBottom:10}}>Secure Report Login</div>
+            <div style={{fontSize:14,color:C.soft,lineHeight:1.7,marginBottom:16}}>
+              This shared report is protected. Enter the patient portal username and password from the registration slip to continue.
+            </div>
+            <label style={lbl}>Portal Username</label>
+            <input className="ri" style={inp({marginBottom:12})} value={sharedPortalState.username || ""} onChange={function(e){
+              var nextValue = normalizePortalUsername(e.target.value);
+              setSharedPortalState(function(prev) { return Object.assign({}, prev, { username: nextValue, error: "" }); });
+            }} placeholder="e.g. patient0001" />
+            <label style={lbl}>Password</label>
+            <input type="password" className="ri" style={inp({marginBottom:14})} value={sharedPortalState.password || ""} onChange={function(e){
+              var nextValue = e.target.value;
+              setSharedPortalState(function(prev) { return Object.assign({}, prev, { password: nextValue, error: "" }); });
+            }} placeholder="••••••••" />
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <button style={btn(C.col)} onClick={function(){ handleSharedPortalLogin(); }}>Open Secure Report</button>
+              {patientPortalState.authenticated && sharedPortalState.source === "portal" && <button style={obtn(C.soft)} onClick={function(){ setStep("portal"); }}>Portal Home</button>}
+            </div>
+            {!!sharedPortalState.error && (
+              <div style={{marginTop:14,padding:"10px 12px",borderRadius:10,border:"1px solid #FECACA",background:"#FEF2F2",color:"#991B1B",fontSize:13}}>
+                {sharedPortalState.error}
+              </div>
+            )}
+            <div style={{marginTop:16,fontSize:12,color:C.soft}}>
+              Link valid until <b>{sharedPortalMeta && sharedPortalMeta.expiresAt ? new Date(sharedPortalMeta.expiresAt).toLocaleString() : "—"}</b>.
+            </div>
+          </div>
+        )}
         {!sharedPortalState.loading && sharedPortalRecord && (
           <div>
             <div className="np" style={{background:"#EEF6FF",border:"1px solid #BFDBFE",borderRadius:12,padding:"12px 16px",fontSize:12,color:"#1E3A8A",marginBottom:14}}>
-              Secure view-only portal. Link valid until <b>{sharedPortalState.payload && sharedPortalState.payload.expiresAt ? new Date(sharedPortalState.payload.expiresAt).toLocaleString() : "—"}</b>.
+              Secure view-only portal. Link valid until <b>{(sharedPortalMeta && sharedPortalMeta.expiresAt) ? new Date(sharedPortalMeta.expiresAt).toLocaleString() : "—"}</b>.
             </div>
             <div style={Object.assign({},crd,{marginBottom:20})}>
               <div style={{background:"linear-gradient(135deg,#0D2137,#1A3A5C)",padding:"22px 32px",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -9158,12 +9645,31 @@ function RadReport() {
               </div>
               <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:14}}>
                 <button style={btn(C.col)} onClick={function(){ saveRegistryPatient(); }}>Save Patient</button>
+                <button style={obtn(C.ok)} onClick={function(){ printPatientPortalSlip(); }}>Print Portal Slip</button>
                 <button style={Object.assign({}, obtn(C.col), (!patientRegistryForm.requestedModality || !patientRegistryForm.requestedRegion) ? {opacity:.55,cursor:"not-allowed"} : {})} disabled={!patientRegistryForm.requestedModality || !patientRegistryForm.requestedRegion} onClick={function(){
                   openReportingHub("registry", patientRegistryForm.requestedModality, patientRegistryForm.requestedRegion, selectedRegistryPatientId || null, patientRegistryForm.studyDate || getTodayISO());
                 }}>Go to Reporting</button>
                 <button style={obtn(C.soft)} onClick={function(){ setSelectedRegistryPatientId(null); setPatientRegistryField("reset", ""); }}>Reset</button>
                 {selectedRegistryPatientId && <button style={obtn(C.err)} onClick={function(){ deleteRegistryPatient(selectedRegistryPatientId); }}>Delete Current</button>}
               </div>
+              {portalPreviewPatient && (portalPreviewPatient.portalUsername || portalPreviewPatient.portalPassword) && (
+                <div style={{marginTop:16,padding:"14px 16px",borderRadius:12,background:"#F8FBFF",border:"1px solid #BFDBFE"}}>
+                  <div style={{fontSize:11,fontWeight:800,color:"#1D4ED8",letterSpacing:1.2,textTransform:"uppercase",marginBottom:8}}>Portal Access</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
+                    <div>
+                      <div style={{fontSize:10,fontWeight:700,color:C.soft,textTransform:"uppercase",letterSpacing:.8}}>Portal Username</div>
+                      <div style={{marginTop:4,fontSize:15,fontWeight:800,color:C.navy}}>{portalPreviewPatient.portalUsername || "Will auto-generate on save"}</div>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,fontWeight:700,color:C.soft,textTransform:"uppercase",letterSpacing:.8}}>Portal Password</div>
+                      <div style={{marginTop:4,fontSize:15,fontWeight:800,color:C.navy}}>{portalPreviewPatient.portalPassword || "Will auto-generate on save"}</div>
+                    </div>
+                    <div style={{gridColumn:"1/-1",fontSize:12,color:C.soft}}>
+                      Print the portal slip to give the patient their login and QR code.
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
