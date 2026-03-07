@@ -3223,12 +3223,7 @@ function AppHdr({ onBack, backTo, setStep, sub, right }) {
           {sub && <span style={{fontSize:11,color:"rgba(255,255,255,.45)",letterSpacing:2,textTransform:"uppercase",display:"block",marginTop:-2}}>{sub}</span>}
         </button>
       </div>
-      <div style={{display:"flex",alignItems:"center",gap:10}}>
-        <button onClick={function(){ setStep("home"); }} style={{padding:"6px 14px",borderRadius:999,border:"2px solid rgba(255,255,255,.28)",background:"rgba(255,255,255,.06)",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>
-          RadReport Home
-        </button>
-        <div>{right}</div>
-      </div>
+      <div>{right}</div>
     </header>
   );
 }
@@ -6723,7 +6718,7 @@ function RadReport() {
   });
   var buildReportingStudyKey = function(rawPatient, rawModality, rawRegion, rawDate) {
     var patientRef = rawPatient && typeof rawPatient === "object" ? rawPatient : {};
-    var patientKey = String(patientRef.registryPatientId || patientRef.id || patientRef.mrno || "").trim().toLowerCase();
+    var patientKey = String(patientRef.mrno || patientRef.registryPatientId || patientRef.id || "").trim().toLowerCase();
     if (!patientKey) {
       patientKey = [
         composeRegisteredPatientName(patientRef) || patientRef.name || "",
