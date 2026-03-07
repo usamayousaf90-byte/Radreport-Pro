@@ -6972,8 +6972,8 @@ function RadReport() {
         alignItems:"center",
         gap:14,
         width:"100%",
-        maxWidth:360,
-        margin:"0 0 34px",
+        maxWidth:336,
+        margin:0,
         padding:"16px 20px",
         borderRadius:30,
         border:"1px solid " + (homeOpenCount ? "rgba(251,146,60,.34)" : "rgba(45,212,191,.26)"),
@@ -7091,10 +7091,10 @@ function RadReport() {
       </nav>
 
       {/* ════════ HERO SPLIT LAYOUT ════════ */}
-      <div style={{position:"relative",zIndex:10,display:"flex",alignItems:"center",minHeight:"calc(100vh - 89px - 64px)",padding:"0 40px",gap:40,flexWrap:"wrap"}}>
+      <div style={{position:"relative",zIndex:10,display:"flex",alignItems:"flex-start",padding:"28px 40px 18px",gap:40,flexWrap:"wrap"}}>
 
         {/* ── LEFT: Text content ── */}
-        <div style={{flex:"1 1 420px",maxWidth:580,paddingTop:20,paddingBottom:40}}>
+        <div style={{flex:"1 1 420px",maxWidth:580,paddingTop:12,paddingBottom:24}}>
 
           {/* Eyebrow tag */}
           <div style={{display:"inline-flex",alignItems:"center",gap:10,padding:"8px 16px",borderRadius:6,background:"rgba(56,189,248,.06)",border:"1px solid rgba(56,189,248,.15)",marginBottom:28,animation:"fadeUp .6s ease .1s both"}}>
@@ -7113,10 +7113,17 @@ function RadReport() {
             Speak your findings. Let AI craft clinical prose. Generate complete professional radiology reports in a fraction of the time.
           </p>
 
-          {homePendingBadge}
+          <div style={{marginBottom:24,animation:"fadeUp .66s ease .38s both"}}>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <button style={obtn("#fff")} onClick={function(){ openPatientRegistry("home"); }}>Patient Registry</button>
+              <button style={obtn("#fff")} onClick={function(){ openReportingHub("home"); }}>Reporting</button>
+              <button style={obtn("#fff")} onClick={function(){ openRecords("home"); }}>Record Book</button>
+              <button style={obtn("#38BDF8")} onClick={function(){ openDoctorPanel("list"); }}>Doctor Directory</button>
+            </div>
+          </div>
 
           {/* Stat counters */}
-          <div style={{display:"flex",gap:28,marginBottom:40,flexWrap:"wrap",animation:"fadeUp .7s ease .42s both"}}>
+          <div style={{display:"flex",gap:28,marginBottom:28,flexWrap:"wrap",animation:"fadeUp .7s ease .42s both"}}>
             {[["4","Modalities","#38BDF8"],["35+","Templates","#818CF8"],["100%","AI-Assisted","#2DD4BF"]].map(function(s,i){return(
               <div key={i} style={{position:"relative",paddingLeft:14}}>
                 <div style={{position:"absolute",left:0,top:4,bottom:4,width:2,borderRadius:2,background:s[2]}} />
@@ -7138,7 +7145,10 @@ function RadReport() {
         </div>
 
         {/* ── RIGHT: Sonar visualization ── */}
-        <div style={{flex:"1 1 300px",display:"flex",alignItems:"center",justifyContent:"center",minHeight:340,animation:"fadeIn 1s ease .4s both"}}>
+        <div style={{flex:"1 1 300px",display:"flex",flexDirection:"column",alignItems:"flex-end",justifyContent:"flex-start",minHeight:340,gap:16,animation:"fadeIn 1s ease .4s both"}}>
+          <div style={{width:"100%",display:"flex",justifyContent:"flex-end"}}>
+            {homePendingBadge}
+          </div>
           <div style={{position:"relative",width:320,height:320}}>
 
             {/* Sonar rings */}
@@ -7248,11 +7258,8 @@ function RadReport() {
             Start with patient registration, then use the reporting queue for today's modality-wise worklist.
           </div>
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-            <button style={obtn("#fff")} onClick={function(){ openPatientRegistry("home"); }}>Patient Registry</button>
-            <button style={obtn("#fff")} onClick={function(){ openReportingHub("home"); }}>Reporting</button>
             <button style={obtn("#fff")} onClick={function(){ openAnalytics("home"); }}>Analytics</button>
-            <button style={obtn("#fff")} onClick={function(){ openRecords("home"); }}>Record Book</button>
-            <button style={obtn("#38BDF8")} onClick={function(){ openDoctorPanel("list"); }}>Doctor Directory</button>
+            <button style={obtn("#22D3EE")} onClick={function(){ openShortcutManager("home"); }}>Shortcut Manager</button>
           </div>
         </div>
 
