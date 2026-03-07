@@ -4230,6 +4230,50 @@ function getRecordDateISO(record) {
   return parsed.toISOString().slice(0, 10);
 }
 
+function hasMeaningfulValue(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "string") return value.trim() !== "";
+  if (Array.isArray(value)) return value.some(hasMeaningfulValue);
+  if (typeof value === "object") {
+    return Object.keys(value).some(function(key) { return hasMeaningfulValue(value[key]); });
+  }
+  return true;
+}
+
+function countMeaningfulEntries(obj) {
+  if (!obj || typeof obj !== "object") return 0;
+  return Object.keys(obj).reduce(function(total, key) {
+    return total + (hasMeaningfulValue(obj[key]) ? 1 : 0);
+  }, 0);
+}
+
+function mergeObjectsPreferFilled(primary, fallback) {
+  var next = Object.assign({}, fallback || {});
+  Object.keys(primary || {}).forEach(function(key) {
+    if (hasMeaningfulValue(primary[key])) next[key] = primary[key];
+  });
+  return next;
+}
+
+function getWorkspaceSourceScore(source) {
+  if (!source || typeof source !== "object") return 0;
+  var patient = source.patient || {};
+  var score = 0;
+  if (hasMeaningfulValue(patient.name)) score += 6;
+  if (hasMeaningfulValue(patient.studyDate)) score += 4;
+  if (hasMeaningfulValue(patient.reportingDoc)) score += 4;
+  if (hasMeaningfulValue(patient.clinicalInfo)) score += 5;
+  score += countMeaningfulEntries(source.findings) * 3;
+  score += countMeaningfulEntries(source.tags);
+  score += countMeaningfulEntries(source.contentStyles);
+  score += countMeaningfulEntries(source.guidelineSelections);
+  if (hasMeaningfulValue(source.impression)) score += 12;
+  if (hasMeaningfulValue(source.recommendation)) score += 8;
+  if (hasMeaningfulValue(source.modality)) score += 3;
+  if (hasMeaningfulValue(source.region)) score += 3;
+  return score;
+}
+
 function formatRecordListDate(record) {
   var raw = (record && record.finalizedAt) || "";
   var parsed = raw ? new Date(raw) : null;
@@ -6151,34 +6195,49 @@ function RadReport() {
     var linkedDraft = openingEditor && record.sourceDraftId
       ? (savedReports.find(function(item) { return item.id === record.sourceDraftId; }) || null)
       : null;
+    var preferredSource = record;
+    var fallbackSource = null;
     if (openingEditor && linkedDraft) {
-      loadDraft(linkedDraft);
-      setTemplateBackStep("records");
-      setSelectedRecordId(record.id || null);
-      setFinalizedMeta(null);
-      setFinalizeAudit(null);
-      showToast("📚 Report loaded into editor", "success");
-      return;
+      var draftScore = getWorkspaceSourceScore(linkedDraft);
+      var recordScore = getWorkspaceSourceScore(record);
+      preferredSource = draftScore > recordScore ? linkedDraft : record;
+      fallbackSource = preferredSource === linkedDraft ? record : linkedDraft;
     }
-    importedTemplateSeedRef.current = (record && record.modality && record.region) ? (record.modality + "__" + record.region) : "";
+    var resolvedPatient = mergeObjectsPreferFilled((preferredSource && preferredSource.patient) || {}, (fallbackSource && fallbackSource.patient) || {});
+    var resolvedFindings = Object.assign({}, (fallbackSource && fallbackSource.findings) || {}, (preferredSource && preferredSource.findings) || {});
+    var resolvedTags = Object.assign({}, (fallbackSource && fallbackSource.tags) || {}, (preferredSource && preferredSource.tags) || {});
+    var resolvedStyles = Object.assign({}, (fallbackSource && fallbackSource.contentStyles) || {}, (preferredSource && preferredSource.contentStyles) || {});
+    var resolvedGuidelines = Object.assign({}, (fallbackSource && fallbackSource.guidelineSelections) || {}, (preferredSource && preferredSource.guidelineSelections) || {});
+    var resolvedImpression = hasMeaningfulValue(preferredSource && preferredSource.impression)
+      ? preferredSource.impression
+      : ((fallbackSource && fallbackSource.impression) || "");
+    var resolvedRecommendation = hasMeaningfulValue(preferredSource && preferredSource.recommendation)
+      ? preferredSource.recommendation
+      : ((fallbackSource && fallbackSource.recommendation) || "");
+    var resolvedUrgency = hasMeaningfulValue(preferredSource && preferredSource.urgency)
+      ? preferredSource.urgency
+      : ((fallbackSource && fallbackSource.urgency) || "Routine");
+    var resolvedModality = (preferredSource && preferredSource.modality) || (fallbackSource && fallbackSource.modality) || null;
+    var resolvedRegion = (preferredSource && preferredSource.region) || (fallbackSource && fallbackSource.region) || null;
+    importedTemplateSeedRef.current = (resolvedModality && resolvedRegion) ? (resolvedModality + "__" + resolvedRegion) : "";
     setActiveDraftId(openingEditor ? (record.sourceDraftId || ((record.id || ("record_" + Date.now())) + "__editable")) : (record.sourceDraftId || null));
     setTemplateBackStep(openingEditor ? "records" : "patient");
-    setModality(record.modality || null);
-    setRegion(record.region || null);
-    setPatient(Object.assign(makeEmptyPatient(), Object.assign({}, record.patient || {})));
-    setFindings(Object.assign({}, record.findings || {}));
-    setTags(Object.assign({}, record.tags || {}));
-    setContentStyles(Object.assign({}, record.contentStyles || {}));
-    setGuidelineSelections(Object.assign({}, record.guidelineSelections || {}));
-    setImpression(record.impression || "");
-    setRec(record.recommendation || "");
-    setUrgency(record.urgency || "Routine");
+    setModality(resolvedModality);
+    setRegion(resolvedRegion);
+    setPatient(Object.assign(makeEmptyPatient(), resolvedPatient));
+    setFindings(resolvedFindings);
+    setTags(resolvedTags);
+    setContentStyles(resolvedStyles);
+    setGuidelineSelections(resolvedGuidelines);
+    setImpression(resolvedImpression);
+    setRec(resolvedRecommendation);
+    setUrgency(resolvedUrgency);
     setFinalizedMeta(openingEditor ? null : (record.finalizedMeta || null));
     setFinalizeAudit(null);
     setSelectedRecordId(record.id || null);
     setStep(nextStep || "preview");
     showToast(openingEditor ? "📚 Report loaded into editor" : "📚 Record loaded", "success");
-  }, [showToast, savedReports, loadDraft]);
+  }, [showToast, savedReports]);
 
   var restoreVersion = useCallback(function(draft, ver) {
     if (!draft || !ver) return;
