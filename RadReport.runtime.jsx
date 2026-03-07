@@ -7080,7 +7080,7 @@ function RadReport() {
             </div>
           )}
           <button style={obtn("#22D3EE")} onClick={function(){ openAnalytics("home"); }}>Analytics</button>
-          <button style={obtn("#22D3EE")} onClick={function(){ openShortcutManager("home"); }}>Shortcut Manager</button>
+          <button style={Object.assign({}, obtn("#22D3EE"), {padding:"6px 10px",fontSize:11})} onClick={function(){ openShortcutManager("home"); }}>Shortcut Manager</button>
           <button style={obtn("rgba(255,255,255,.8)")} onClick={doLogout}>Logout</button>
           {[["#6366F1","#A5B4FC","AI ENGINE","ONLINE"],["#0F766E","#2DD4BF","VOICE","READY"]].map(function(p,i){return(
             <div key={i} style={{display:"flex",alignItems:"center",gap:7,padding:"8px 16px",borderRadius:24,background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)",backdropFilter:"blur(8px)"}}>
@@ -7261,9 +7261,6 @@ function RadReport() {
         <div style={{marginBottom:18,animation:"fadeUp .6s ease .76s both",display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap"}}>
           <div style={{fontSize:12,color:"rgba(255,255,255,.38)"}}>
             Start with patient registration, then use the reporting queue for today's modality-wise worklist.
-          </div>
-          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-            <button style={obtn("#22D3EE")} onClick={function(){ openShortcutManager("home"); }}>Shortcut Manager</button>
           </div>
         </div>
 
