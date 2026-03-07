@@ -6716,56 +6716,109 @@ function RadReport() {
     if (aRegion !== bRegion) return aRegion.localeCompare(bRegion);
     return composeRegisteredPatientName(a).localeCompare(composeRegisteredPatientName(b));
   });
-  var buildReportingStudyKey = function(rawPatient, rawModality, rawRegion, rawDate) {
+  var getStudyDisplayName = function(rawPatient) {
     var patientRef = rawPatient && typeof rawPatient === "object" ? rawPatient : {};
-    var patientKey = String(patientRef.mrno || patientRef.registryPatientId || patientRef.id || "").trim().toLowerCase();
-    if (!patientKey) {
-      patientKey = [
-        composeRegisteredPatientName(patientRef) || patientRef.name || "",
-        patientRef.cell || "",
-        patientRef.cnic || ""
-      ].join("|").toLowerCase().replace(/\s+/g, " ").trim();
-    }
-    var modalityKey = normalizeTemplateModality(rawModality || patientRef.requestedModality || "");
-    var regionKey = matchRegionForModality(modalityKey, rawRegion || patientRef.requestedRegion || "");
-    var dateKey = String(rawDate || patientRef.studyDate || "").trim();
-    if (!patientKey || !modalityKey || !regionKey || !dateKey) return "";
-    return [patientKey, modalityKey.toLowerCase(), String(regionKey).toLowerCase(), dateKey].join("__");
+    return String(composeRegisteredPatientName(patientRef) || patientRef.name || [patientRef.firstName || "", patientRef.lastName || ""].join(" "))
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
   };
-  var reportingStudyStatusMap = {};
-  savedRecords.forEach(function(record) {
-    var recordKey = buildReportingStudyKey(record && record.patient, record && record.modality, record && record.region, getRecordDateISO(record));
-    if (!recordKey) return;
-    reportingStudyStatusMap[recordKey] = {
-      label: "Reported",
-      color: "#166534",
-      background: "#ECFDF5",
-      border: "#86EFAC",
-      detail: "Finalized on " + formatRecordListDate(record)
+  var normalizeStudyIdentityToken = function(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  };
+  var buildStudyIdentityTokens = function(rawPatient, rawModality, rawRegion, rawDate) {
+    var patientRef = rawPatient && typeof rawPatient === "object" ? rawPatient : {};
+    var dateToken = normalizeStudyIdentityToken(rawDate || patientRef.studyDate || "");
+    var modalityToken = normalizeStudyIdentityToken(normalizeTemplateModality(rawModality || patientRef.requestedModality || ""));
+    var regionToken = normalizeStudyIdentityToken(matchRegionForModality(modalityToken, rawRegion || patientRef.requestedRegion || ""));
+    var scopedPrefix = [dateToken, modalityToken, regionToken].join("|");
+    var tokens = [];
+    var addToken = function(kind, rawValue) {
+      var normalizedValue = normalizeStudyIdentityToken(rawValue);
+      if (!normalizedValue) return;
+      tokens.push(kind + "|" + normalizedValue);
+      if (scopedPrefix !== "||") tokens.push(scopedPrefix + "|" + kind + "|" + normalizedValue);
     };
-  });
-  savedReports.forEach(function(draft) {
-    var draftKey = buildReportingStudyKey(draft && draft.patient, draft && draft.modality, draft && draft.region, draft && draft.patient && draft.patient.studyDate);
-    if (!draftKey || reportingStudyStatusMap[draftKey]) return;
-    reportingStudyStatusMap[draftKey] = {
-      label: "Incomplete",
-      color: "#9A3412",
-      background: "#FFF7ED",
-      border: "#FDBA74",
-      detail: "Draft saved" + (draft && draft.savedAt ? " on " + new Date(draft.savedAt).toLocaleString() : "")
-    };
-  });
+    addToken("mrno", patientRef.mrno);
+    addToken("registry", patientRef.registryPatientId || patientRef.id);
+    addToken("name", getStudyDisplayName(patientRef));
+    addToken("cell", patientRef.cell || patientRef.phone);
+    addToken("cnic", patientRef.cnic);
+    return Array.from(new Set(tokens));
+  };
+  var isSameStudy = function(targetPatient, targetModality, targetRegion, targetDate, sourcePatient, sourceModality, sourceRegion, sourceDate) {
+    var leftPatient = targetPatient && typeof targetPatient === "object" ? targetPatient : {};
+    var rightPatient = sourcePatient && typeof sourcePatient === "object" ? sourcePatient : {};
+    var leftDate = String(targetDate || leftPatient.studyDate || "").trim();
+    var rightDate = String(sourceDate || rightPatient.studyDate || "").trim();
+    if (leftDate && rightDate && leftDate !== rightDate) return false;
+    var leftModality = normalizeTemplateModality(targetModality || leftPatient.requestedModality || "");
+    var rightModality = normalizeTemplateModality(sourceModality || rightPatient.requestedModality || "");
+    if (leftModality && rightModality && leftModality !== rightModality) return false;
+    var leftRegion = String(matchRegionForModality(leftModality || rightModality, targetRegion || leftPatient.requestedRegion || "") || "").toLowerCase();
+    var rightRegion = String(matchRegionForModality(rightModality || leftModality, sourceRegion || rightPatient.requestedRegion || "") || "").toLowerCase();
+    if (leftRegion && rightRegion && leftRegion !== rightRegion) return false;
+    var leftMrno = String(leftPatient.mrno || "").trim().toLowerCase();
+    var rightMrno = String(rightPatient.mrno || "").trim().toLowerCase();
+    if (leftMrno && rightMrno) return leftMrno === rightMrno;
+    var leftRegistryId = String(leftPatient.registryPatientId || leftPatient.id || "").trim().toLowerCase();
+    var rightRegistryId = String(rightPatient.registryPatientId || rightPatient.id || "").trim().toLowerCase();
+    if (leftRegistryId && rightRegistryId && leftRegistryId === rightRegistryId) return true;
+    var leftName = getStudyDisplayName(leftPatient);
+    var rightName = getStudyDisplayName(rightPatient);
+    if (!leftName || !rightName || leftName !== rightName) return false;
+    var leftCell = String(leftPatient.cell || leftPatient.phone || "").trim();
+    var rightCell = String(rightPatient.cell || rightPatient.phone || "").trim();
+    if (leftCell && rightCell) return leftCell === rightCell;
+    var leftCnic = String(leftPatient.cnic || "").trim();
+    var rightCnic = String(rightPatient.cnic || "").trim();
+    if (leftCnic && rightCnic) return leftCnic === rightCnic;
+    return true;
+  };
   var getReportingStudyStatus = function(rawPatient, rawModality, rawRegion, rawDate) {
-    var key = buildReportingStudyKey(rawPatient, rawModality, rawRegion, rawDate);
-    return key && reportingStudyStatusMap[key]
-      ? reportingStudyStatusMap[key]
-      : {
-          label: "Pending",
-          color: "#475569",
-          background: "#F8FAFC",
-          border: "#CBD5E1",
-          detail: "Not finalized yet"
-        };
+    var targetTokens = buildStudyIdentityTokens(rawPatient, rawModality, rawRegion, rawDate);
+    var matchingRecord = savedRecords.find(function(record) {
+      var recordTokens = buildStudyIdentityTokens(record && record.patient, record && record.modality, record && record.region, getRecordDateISO(record));
+      var tokenMatch = targetTokens.some(function(token) { return recordTokens.indexOf(token) !== -1; });
+      if (tokenMatch) return true;
+      return isSameStudy(rawPatient, rawModality, rawRegion, rawDate, record && record.patient, record && record.modality, record && record.region, getRecordDateISO(record));
+    });
+    if (matchingRecord) {
+      return {
+        label: "Reported",
+        color: "#166534",
+        background: "#ECFDF5",
+        border: "#86EFAC",
+        detail: "Finalized on " + formatRecordListDate(matchingRecord)
+      };
+    }
+    var matchingDraft = savedReports.find(function(draft) {
+      var draftDate = String((draft && draft.patient && draft.patient.studyDate) || (draft && draft.savedAt) || "").trim();
+      if (/^\d{4}-\d{2}-\d{2}T/.test(draftDate)) draftDate = draftDate.slice(0, 10);
+      var draftTokens = buildStudyIdentityTokens(draft && draft.patient, draft && draft.modality, draft && draft.region, draftDate);
+      var tokenMatch = targetTokens.some(function(token) { return draftTokens.indexOf(token) !== -1; });
+      if (tokenMatch) return true;
+      return isSameStudy(rawPatient, rawModality, rawRegion, rawDate, draft && draft.patient, draft && draft.modality, draft && draft.region, draftDate);
+    });
+    if (matchingDraft) {
+      return {
+        label: "Incomplete",
+        color: "#9A3412",
+        background: "#FFF7ED",
+        border: "#FDBA74",
+        detail: "Draft saved" + (matchingDraft && matchingDraft.savedAt ? " on " + new Date(matchingDraft.savedAt).toLocaleString() : "")
+      };
+    }
+    return {
+      label: "Pending",
+      color: "#475569",
+      background: "#F8FAFC",
+      border: "#CBD5E1",
+      detail: "Not finalized yet"
+    };
   };
   var selectedReportingPatient = filteredReportingPatients.find(function(item) { return item.id === selectedReportingPatientId; }) || filteredReportingPatients[0] || null;
   var selectedReportingStatus = selectedReportingPatient
@@ -6901,9 +6954,51 @@ function RadReport() {
   }).filter(function(row) {
     return row.status.label !== "Reported";
   });
-  var homePendingCount = homePendingStudies.length;
+  var homeOpenCount = homePendingStudies.length;
   var homePurePendingCount = homePendingStudies.filter(function(row) { return row.status.label === "Pending"; }).length;
   var homeIncompleteCount = homePendingStudies.filter(function(row) { return row.status.label === "Incomplete"; }).length;
+  var homePendingBadge = (
+    <button
+      onClick={function(){ openReportingHub("home", "", "", null, homeQueueDate); }}
+      style={{
+        position:"relative",
+        overflow:"hidden",
+        display:"flex",
+        alignItems:"center",
+        gap:14,
+        width:"100%",
+        maxWidth:360,
+        margin:"0 0 34px",
+        padding:"16px 20px",
+        borderRadius:30,
+        border:"1px solid " + (homeOpenCount ? "rgba(251,146,60,.34)" : "rgba(45,212,191,.26)"),
+        background:homeOpenCount
+          ? "linear-gradient(135deg,rgba(127,29,29,.58) 0%,rgba(154,52,18,.44) 45%,rgba(194,65,12,.34) 100%)"
+          : "linear-gradient(135deg,rgba(6,95,70,.44) 0%,rgba(15,118,110,.24) 100%)",
+        color:"#fff",
+        cursor:"pointer",
+        boxShadow:homeOpenCount ? "0 18px 40px rgba(127,29,29,.24)" : "0 16px 34px rgba(6,95,70,.18)",
+        backdropFilter:"blur(12px)",
+        fontFamily:"'DM Sans',sans-serif",
+        animation:"fadeUp .72s ease .4s both"
+      }}
+    >
+      <div style={{position:"absolute",inset:0,background:"linear-gradient(120deg,transparent 0%,rgba(255,255,255,.16) 50%,transparent 100%)",animation:"queueSheen 2.8s ease-in-out infinite",pointerEvents:"none"}} />
+      <div style={{position:"relative",display:"flex",alignItems:"center",gap:14,width:"100%"}}>
+        <div style={{width:13,height:13,borderRadius:"50%",background:homeOpenCount ? "#FB7185" : "#2DD4BF",animation:homeOpenCount ? "queuePulse 1.15s ease-in-out infinite" : "breathe 2s ease-in-out infinite",flexShrink:0}} />
+        <div style={{textAlign:"left",flex:1}}>
+          <div style={{fontSize:11,fontWeight:800,letterSpacing:"1.9px",textTransform:"uppercase",color:homeOpenCount ? "#FED7AA" : "#99F6E4"}}>Pending Cases</div>
+          <div style={{display:"flex",alignItems:"baseline",gap:9,marginTop:3}}>
+            <span style={{fontFamily:"'DM Serif Display',serif",fontSize:32,lineHeight:1,color:"#fff"}}>{homePurePendingCount}</span>
+            <span style={{fontSize:12,color:"rgba(255,255,255,.76)"}}>for {homeQueueDate}</span>
+          </div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,.6)",marginTop:4}}>
+            {homeIncompleteCount} incomplete draft{homeIncompleteCount === 1 ? "" : "s"} waiting to be finalized
+          </div>
+        </div>
+      </div>
+    </button>
+  );
   var shortcutQ = shortcutAdminQuery.trim().toLowerCase();
   var shortcutManagerRows = (shortcutQ ? allShortcuts.filter(function(sc) {
     var hay = [sc.code || "", sc.title || "", (sc.fallback || ""), (sc.regionKeywords || []).join(" "), (sc.sectionKeywords || []).join(" "), (sc.fieldKeywords || []).join(" ")].join(" ").toLowerCase();
@@ -6974,42 +7069,6 @@ function RadReport() {
               {authUser.username} · {authUser.role}
             </div>
           )}
-          <button
-            onClick={function(){ openReportingHub("home", "", "", null, homeQueueDate); }}
-            style={{
-              position:"relative",
-              overflow:"hidden",
-              display:"flex",
-              alignItems:"center",
-              gap:10,
-              padding:"9px 14px",
-              borderRadius:26,
-              border:"1px solid " + (homePendingCount ? "rgba(251,146,60,.34)" : "rgba(45,212,191,.26)"),
-              background:homePendingCount
-                ? "linear-gradient(135deg,rgba(127,29,29,.55) 0%,rgba(154,52,18,.42) 45%,rgba(194,65,12,.34) 100%)"
-                : "linear-gradient(135deg,rgba(6,95,70,.4) 0%,rgba(15,118,110,.24) 100%)",
-              color:"#fff",
-              cursor:"pointer",
-              boxShadow:homePendingCount ? "0 14px 32px rgba(127,29,29,.24)" : "0 12px 28px rgba(6,95,70,.18)",
-              backdropFilter:"blur(10px)",
-              fontFamily:"'DM Sans',sans-serif"
-            }}
-          >
-            <div style={{position:"absolute",inset:0,background:"linear-gradient(120deg,transparent 0%,rgba(255,255,255,.16) 50%,transparent 100%)",animation:"queueSheen 2.8s ease-in-out infinite",pointerEvents:"none"}} />
-            <div style={{position:"relative",display:"flex",alignItems:"center",gap:10}}>
-              <div style={{width:10,height:10,borderRadius:"50%",background:homePendingCount ? "#FB7185" : "#2DD4BF",animation:homePendingCount ? "queuePulse 1.15s ease-in-out infinite" : "breathe 2s ease-in-out infinite",flexShrink:0}} />
-              <div style={{textAlign:"left"}}>
-                <div style={{fontSize:10,fontWeight:800,letterSpacing:"1.6px",textTransform:"uppercase",color:homePendingCount ? "#FED7AA" : "#99F6E4"}}>Pending Cases</div>
-                <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:2}}>
-                  <span style={{fontFamily:"'DM Serif Display',serif",fontSize:24,lineHeight:1,color:"#fff"}}>{homePendingCount}</span>
-                  <span style={{fontSize:11,color:"rgba(255,255,255,.72)"}}>today</span>
-                </div>
-                <div style={{fontSize:10,color:"rgba(255,255,255,.58)",marginTop:2}}>
-                  {homePurePendingCount} pending • {homeIncompleteCount} incomplete
-                </div>
-              </div>
-            </div>
-          </button>
           <button style={obtn("#22D3EE")} onClick={function(){ openAnalytics("home"); }}>Analytics</button>
           <button style={obtn("#22D3EE")} onClick={function(){ openShortcutManager("home"); }}>Shortcut Manager</button>
           <button style={obtn("rgba(255,255,255,.8)")} onClick={doLogout}>Logout</button>
@@ -7048,6 +7107,8 @@ function RadReport() {
           <p style={{fontSize:16,color:"rgba(255,255,255,.42)",lineHeight:1.75,maxWidth:460,margin:"20px 0 36px",animation:"fadeUp .7s ease .32s both"}}>
             Speak your findings. Let AI craft clinical prose. Generate complete professional radiology reports in a fraction of the time.
           </p>
+
+          {homePendingBadge}
 
           {/* Stat counters */}
           <div style={{display:"flex",gap:28,marginBottom:40,flexWrap:"wrap",animation:"fadeUp .7s ease .42s both"}}>
