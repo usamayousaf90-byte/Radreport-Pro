@@ -93,6 +93,16 @@ const CSS = `
     0%,100%{box-shadow:0 0 0 0 var(--gc,rgba(0,180,216,.3));}
     50%{box-shadow:0 0 0 6px var(--gc,rgba(0,180,216,0));}
   }
+
+  @keyframes queuePulse{
+    0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(248,113,113,.42);}
+    50%{transform:scale(1.18);box-shadow:0 0 0 10px rgba(248,113,113,0);}
+  }
+
+  @keyframes queueSheen{
+    0%{transform:translateX(-145%);}
+    55%,100%{transform:translateX(145%);}
+  }
 `;
 
 const TEXT_STYLE_FONTS = [
@@ -6824,6 +6834,22 @@ function RadReport() {
     var urgencyLabel = String(record && record.urgency || "");
     return urgencyLabel === "Urgent" || urgencyLabel.indexOf("Critical") === 0;
   }).length;
+  var homeQueueDate = getTodayISO();
+  var homePendingStudies = savedPatients.filter(function(item) {
+    return String(item && item.studyDate || "") === homeQueueDate;
+  }).map(function(item) {
+    var modalityKey = normalizeTemplateModality(item.requestedModality || "");
+    var regionKey = matchRegionForModality(modalityKey, item.requestedRegion || "");
+    return {
+      patient: item,
+      status: getReportingStudyStatus(item, modalityKey, regionKey, item.studyDate || homeQueueDate)
+    };
+  }).filter(function(row) {
+    return row.status.label !== "Reported";
+  });
+  var homePendingCount = homePendingStudies.length;
+  var homePurePendingCount = homePendingStudies.filter(function(row) { return row.status.label === "Pending"; }).length;
+  var homeIncompleteCount = homePendingStudies.filter(function(row) { return row.status.label === "Incomplete"; }).length;
   var shortcutQ = shortcutAdminQuery.trim().toLowerCase();
   var shortcutManagerRows = (shortcutQ ? allShortcuts.filter(function(sc) {
     var hay = [sc.code || "", sc.title || "", (sc.fallback || ""), (sc.regionKeywords || []).join(" "), (sc.sectionKeywords || []).join(" "), (sc.fieldKeywords || []).join(" ")].join(" ").toLowerCase();
@@ -6894,6 +6920,42 @@ function RadReport() {
               {authUser.username} · {authUser.role}
             </div>
           )}
+          <button
+            onClick={function(){ openReportingHub("home", "", "", null, homeQueueDate); }}
+            style={{
+              position:"relative",
+              overflow:"hidden",
+              display:"flex",
+              alignItems:"center",
+              gap:10,
+              padding:"9px 14px",
+              borderRadius:26,
+              border:"1px solid " + (homePendingCount ? "rgba(251,146,60,.34)" : "rgba(45,212,191,.26)"),
+              background:homePendingCount
+                ? "linear-gradient(135deg,rgba(127,29,29,.55) 0%,rgba(154,52,18,.42) 45%,rgba(194,65,12,.34) 100%)"
+                : "linear-gradient(135deg,rgba(6,95,70,.4) 0%,rgba(15,118,110,.24) 100%)",
+              color:"#fff",
+              cursor:"pointer",
+              boxShadow:homePendingCount ? "0 14px 32px rgba(127,29,29,.24)" : "0 12px 28px rgba(6,95,70,.18)",
+              backdropFilter:"blur(10px)",
+              fontFamily:"'DM Sans',sans-serif"
+            }}
+          >
+            <div style={{position:"absolute",inset:0,background:"linear-gradient(120deg,transparent 0%,rgba(255,255,255,.16) 50%,transparent 100%)",animation:"queueSheen 2.8s ease-in-out infinite",pointerEvents:"none"}} />
+            <div style={{position:"relative",display:"flex",alignItems:"center",gap:10}}>
+              <div style={{width:10,height:10,borderRadius:"50%",background:homePendingCount ? "#FB7185" : "#2DD4BF",animation:homePendingCount ? "queuePulse 1.15s ease-in-out infinite" : "breathe 2s ease-in-out infinite",flexShrink:0}} />
+              <div style={{textAlign:"left"}}>
+                <div style={{fontSize:10,fontWeight:800,letterSpacing:"1.6px",textTransform:"uppercase",color:homePendingCount ? "#FED7AA" : "#99F6E4"}}>Pending Cases</div>
+                <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:2}}>
+                  <span style={{fontFamily:"'DM Serif Display',serif",fontSize:24,lineHeight:1,color:"#fff"}}>{homePendingCount}</span>
+                  <span style={{fontSize:11,color:"rgba(255,255,255,.72)"}}>today</span>
+                </div>
+                <div style={{fontSize:10,color:"rgba(255,255,255,.58)",marginTop:2}}>
+                  {homePurePendingCount} pending • {homeIncompleteCount} incomplete
+                </div>
+              </div>
+            </div>
+          </button>
           <button style={obtn("#22D3EE")} onClick={function(){ openAnalytics("home"); }}>Analytics</button>
           <button style={obtn("#22D3EE")} onClick={function(){ openShortcutManager("home"); }}>Shortcut Manager</button>
           <button style={obtn("rgba(255,255,255,.8)")} onClick={doLogout}>Logout</button>
