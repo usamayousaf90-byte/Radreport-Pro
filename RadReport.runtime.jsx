@@ -7263,7 +7263,6 @@ function RadReport() {
             Start with patient registration, then use the reporting queue for today's modality-wise worklist.
           </div>
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-            <button style={obtn("#fff")} onClick={function(){ openAnalytics("home"); }}>Analytics</button>
             <button style={obtn("#22D3EE")} onClick={function(){ openShortcutManager("home"); }}>Shortcut Manager</button>
           </div>
         </div>
