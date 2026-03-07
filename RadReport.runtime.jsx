@@ -3749,6 +3749,7 @@ function FindingField({
 
 var USER_KEY = "rrp_users_v1";
 var SESSION_KEY = "rrp_session_v1";
+var LAST_ORG_SLUG_KEY = "rrp_last_org_slug_v1";
 var LOCAL_DRAFT_PREFIX = "rrp_local_drafts_";
 var LOCAL_PATIENT_PREFIX = "rrp_local_patients_";
 var LOCAL_RECORD_PREFIX = "rrp_local_records_";
@@ -3774,6 +3775,14 @@ var EMPTY_SHORTCUT_EDITOR = {
   regionKeywords: "",
   sectionKeywords: "",
   fieldKeywords: ""
+};
+
+var BACKEND_ROLE_LABELS = {
+  super_admin: "Super Admin",
+  organization_admin: "Organization Admin",
+  radiologist: "Radiologist",
+  receptionist: "Receptionist",
+  referring_doctor: "Referring Doctor"
 };
 
 function makeEmptyPatient() {
@@ -4221,6 +4230,187 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function normalizeAuthUser(rawUser) {
+  var source = rawUser && rawUser.user ? rawUser.user : rawUser;
+  if (!source || typeof source !== "object") return null;
+  var username = String(source.username || "").trim();
+  var role = String(source.role || "").trim();
+  if (!username || !role) return null;
+  var org = source.organization && typeof source.organization === "object"
+    ? {
+        id: String(source.organization.id || "").trim(),
+        name: String(source.organization.name || "").trim(),
+        slug: String(source.organization.slug || "").trim(),
+        subdomain: String(source.organization.subdomain || "").trim(),
+        status: String(source.organization.status || "").trim()
+      }
+    : null;
+  return {
+    id: String(source.id || source.user_id || "").trim(),
+    username: username,
+    email: String(source.email || "").trim(),
+    fullName: String(source.full_name || source.fullName || "").trim(),
+    role: role,
+    organization: org
+  };
+}
+
+function getRoleLabel(role) {
+  return BACKEND_ROLE_LABELS[role] || role || "User";
+}
+
+function isTenantRole(role) {
+  return Object.prototype.hasOwnProperty.call(BACKEND_ROLE_LABELS, String(role || ""));
+}
+
+function canFinalizeForRole(role) {
+  return ["Admin", "Radiologist", "super_admin", "organization_admin", "radiologist"].indexOf(String(role || "")) !== -1;
+}
+
+function canManageOrganizations(role) {
+  return String(role || "") === "super_admin";
+}
+
+function canManageUsersForRole(role) {
+  return ["super_admin", "organization_admin"].indexOf(String(role || "")) !== -1;
+}
+
+function canManageSettingsForRole(role) {
+  return ["super_admin", "organization_admin"].indexOf(String(role || "")) !== -1;
+}
+
+function getAvailableManagedRoles(actorRole) {
+  var role = String(actorRole || "");
+  if (role === "super_admin") {
+    return ["organization_admin", "radiologist", "receptionist", "referring_doctor", "super_admin"];
+  }
+  if (role === "organization_admin") {
+    return ["radiologist", "receptionist", "referring_doctor"];
+  }
+  return [];
+}
+
+function getAuthStorageKey(user) {
+  var normalized = normalizeAuthUser(user);
+  if (!normalized || !normalized.username) return "";
+  var orgSlug = normalized.organization && normalized.organization.slug ? normalized.organization.slug : "";
+  return orgSlug ? orgSlug + ":" + normalized.username : normalized.username;
+}
+
+function slugifyWorkspaceValue(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 63);
+}
+
+function getDoctorDirectoryStorageKey(scopeKey) {
+  return scopeKey ? DOCTOR_DIRECTORY_KEY + "_" + scopeKey : DOCTOR_DIRECTORY_KEY;
+}
+
+async function readJsonResponse(res, fallback) {
+  return res.json().catch(function() { return fallback || {}; });
+}
+
+async function tenantAuthMe() {
+  var res = await fetch("/api/auth/me", { method: "GET", credentials: "same-origin" });
+  var data = await readJsonResponse(res, {});
+  if (res.ok) return { ok: true, session: data.session || null };
+  return {
+    ok: false,
+    status: res.status,
+    message: (data.error && data.error.message) || "Session lookup failed"
+  };
+}
+
+async function tenantLogin(credentials) {
+  var res = await fetch("/api/auth/login", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(credentials || {})
+  });
+  var data = await readJsonResponse(res, {});
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Login failed");
+  return normalizeAuthUser(data.user);
+}
+
+async function tenantLogout() {
+  var res = await fetch("/api/auth/logout", {
+    method: "POST",
+    credentials: "same-origin"
+  });
+  if (!res.ok) {
+    var data = await readJsonResponse(res, {});
+    throw new Error((data.error && data.error.message) || "Logout failed");
+  }
+}
+
+async function loadOrganizationsApi() {
+  var res = await fetch("/api/organizations", { method: "GET", credentials: "same-origin" });
+  var data = await readJsonResponse(res, {});
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Organization load failed");
+  return Array.isArray(data.organizations) ? data.organizations : [];
+}
+
+async function saveOrganizationApi(payload, organizationId) {
+  var method = organizationId ? "PATCH" : "POST";
+  var body = organizationId ? Object.assign({ id: organizationId }, payload || {}) : (payload || {});
+  var res = await fetch("/api/organizations", {
+    method: method,
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  var data = await readJsonResponse(res, {});
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Organization save failed");
+  return data;
+}
+
+async function loadUsersApi(organizationId) {
+  var qs = organizationId ? ("?organization_id=" + encodeURIComponent(organizationId)) : "";
+  var res = await fetch("/api/users" + qs, { method: "GET", credentials: "same-origin" });
+  var data = await readJsonResponse(res, {});
+  if (!res.ok) throw new Error((data.error && data.error.message) || "User load failed");
+  return Array.isArray(data.users) ? data.users : [];
+}
+
+async function saveUserApi(payload, userId) {
+  var method = userId ? "PATCH" : "POST";
+  var body = userId ? Object.assign({ id: userId }, payload || {}) : (payload || {});
+  var res = await fetch("/api/users", {
+    method: method,
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  var data = await readJsonResponse(res, {});
+  if (!res.ok) throw new Error((data.error && data.error.message) || "User save failed");
+  return data;
+}
+
+async function loadOrganizationSettingsApi(organizationId) {
+  var qs = organizationId ? ("?organization_id=" + encodeURIComponent(organizationId)) : "";
+  var res = await fetch("/api/settings" + qs, { method: "GET", credentials: "same-origin" });
+  var data = await readJsonResponse(res, {});
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Organization settings load failed");
+  return data.settings || {};
+}
+
+async function saveOrganizationSettingsApi(payload, organizationId) {
+  var qs = organizationId ? ("?organization_id=" + encodeURIComponent(organizationId)) : "";
+  var res = await fetch("/api/settings" + qs, {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {})
+  });
+  var data = await readJsonResponse(res, {});
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Organization settings save failed");
+  return data;
+}
+
 function seedUsers() {
   var defaults = [
     { username: "admin", password: "admin123", role: "Admin" },
@@ -4275,9 +4465,9 @@ function normalizeDoctorRecord(rawDoctor) {
   };
 }
 
-function loadDoctorDirectory() {
+function loadDoctorDirectory(scopeKey) {
   try {
-    var doctors = JSON.parse(localStorage.getItem(DOCTOR_DIRECTORY_KEY) || "[]");
+    var doctors = JSON.parse(localStorage.getItem(getDoctorDirectoryStorageKey(scopeKey)) || "[]");
     if (!Array.isArray(doctors)) return [];
     var seen = {};
     return doctors.map(normalizeDoctorRecord).filter(function(doctor) {
@@ -4294,10 +4484,10 @@ function loadDoctorDirectory() {
   }
 }
 
-function saveDoctorDirectory(doctors) {
+function saveDoctorDirectory(scopeKey, doctors) {
   try {
     var normalized = Array.isArray(doctors) ? doctors.map(normalizeDoctorRecord).filter(Boolean) : [];
-    localStorage.setItem(DOCTOR_DIRECTORY_KEY, JSON.stringify(normalized));
+    localStorage.setItem(getDoctorDirectoryStorageKey(scopeKey), JSON.stringify(normalized));
   } catch (e) {}
 }
 
@@ -5766,9 +5956,11 @@ function RadReport() {
   var [syncingDrafts, setSyncingDrafts] = useState(false);
   var [syncingPatients, setSyncingPatients] = useState(false);
   var [syncingRecords, setSyncingRecords] = useState(false);
+  var [authMode, setAuthMode] = useState("checking");
   var [authUser, setAuthUser] = useState(null);
   var [users, setUsers] = useState([]);
-  var [loginForm, setLoginForm] = useState({ username: "", password: "" });
+  var [loginForm, setLoginForm] = useState({ organization: "", username: "", password: "" });
+  var [loginLoading, setLoginLoading] = useState(false);
   var [finalizeAudit, setFinalizeAudit] = useState(null);
   var [finalizedMeta, setFinalizedMeta] = useState(null);
   var [customShortcuts, setCustomShortcuts] = useState([]);
@@ -5797,6 +5989,40 @@ function RadReport() {
   var [doctorDrawerOpen, setDoctorDrawerOpen] = useState(false);
   var [doctorPanelTab, setDoctorPanelTab] = useState("list");
   var [guidelineSelections, setGuidelineSelections] = useState({});
+  var [tenantOrganizations, setTenantOrganizations] = useState([]);
+  var [tenantOrganizationsLoading, setTenantOrganizationsLoading] = useState(false);
+  var [selectedTenantOrganizationId, setSelectedTenantOrganizationId] = useState("");
+  var [tenantOrganizationForm, setTenantOrganizationForm] = useState({
+    name: "",
+    slug: "",
+    subdomain: "",
+    clinic_name: "",
+    phone: "",
+    address: "",
+    logo_url: "",
+    admin_username: "",
+    admin_password: "",
+    admin_full_name: ""
+  });
+  var [editingTenantOrganizationId, setEditingTenantOrganizationId] = useState("");
+  var [tenantUsers, setTenantUsers] = useState([]);
+  var [tenantUsersLoading, setTenantUsersLoading] = useState(false);
+  var [tenantUserForm, setTenantUserForm] = useState({
+    username: "",
+    password: "",
+    full_name: "",
+    email: "",
+    role: "radiologist",
+    status: "active"
+  });
+  var [editingTenantUserId, setEditingTenantUserId] = useState("");
+  var [organizationSettingsForm, setOrganizationSettingsForm] = useState({
+    clinic_name: "",
+    logo_url: "",
+    phone: "",
+    address: ""
+  });
+  var [organizationSettingsLoading, setOrganizationSettingsLoading] = useState(false);
   var [shareDialog, setShareDialog] = useState({ open: false, loading: false, error: "", url: "", qrUrl: "", expiresAt: "", token: "", title: "" });
   var [sharedPortalState, setSharedPortalState] = useState(makeEmptySharedPortalState);
   var [patientPortalState, setPatientPortalState] = useState(makeEmptyPatientPortalState);
@@ -5808,6 +6034,40 @@ function RadReport() {
     setToast({ msg: msg, type: type || "info" });
     setTimeout(function(){ setToast(null); }, 5000);
   }, []);
+
+  var authStorageKey = getAuthStorageKey(authUser);
+  var authRoleLabel = authUser ? getRoleLabel(authUser.role) : "";
+  var authOrganizationName = authUser && authUser.organization && authUser.organization.name ? authUser.organization.name : "";
+  var authOrganizationSlug = authUser && authUser.organization && authUser.organization.slug ? authUser.organization.slug : "";
+  var managedRoleOptions = getAvailableManagedRoles(authUser && authUser.role);
+
+  var resetTenantOrganizationForm = useCallback(function() {
+    setTenantOrganizationForm({
+      name: "",
+      slug: "",
+      subdomain: "",
+      clinic_name: "",
+      phone: "",
+      address: "",
+      logo_url: "",
+      admin_username: "",
+      admin_password: "",
+      admin_full_name: ""
+    });
+    setEditingTenantOrganizationId("");
+  }, []);
+
+  var resetTenantUserForm = useCallback(function(nextRole) {
+    setTenantUserForm({
+      username: "",
+      password: "",
+      full_name: "",
+      email: "",
+      role: nextRole || (managedRoleOptions[0] || "radiologist"),
+      status: "active"
+    });
+    setEditingTenantUserId("");
+  }, [managedRoleOptions]);
 
   var openShortcutManager = useCallback(function(backStep) {
     setShortcutBackStep(backStep || "home");
@@ -5830,6 +6090,114 @@ function RadReport() {
     setStep("analytics");
   }, []);
 
+  var loadTenantOrganizations = useCallback(async function(quiet) {
+    if (!authUser || !canManageOrganizations(authUser.role)) return [];
+    setTenantOrganizationsLoading(true);
+    try {
+      var rows = await loadOrganizationsApi();
+      setTenantOrganizations(rows);
+      setSelectedTenantOrganizationId(function(prev) {
+        if (prev && rows.some(function(item) { return item.id === prev; })) return prev;
+        if (authUser.organization && authUser.organization.id && rows.some(function(item) { return item.id === authUser.organization.id; })) {
+          return authUser.organization.id;
+        }
+        return rows[0] ? rows[0].id : "";
+      });
+      return rows;
+    } catch (e) {
+      if (!quiet) showToast(e && e.message ? e.message : "Unable to load organizations", "error");
+      return [];
+    } finally {
+      setTenantOrganizationsLoading(false);
+    }
+  }, [authUser, showToast]);
+
+  var resolveTenantTargetOrganizationId = useCallback(function(preferredId, fallbackRows) {
+    var rows = Array.isArray(fallbackRows) ? fallbackRows : tenantOrganizations;
+    if (preferredId && rows.some(function(item) { return item.id === preferredId; })) return preferredId;
+    if (selectedTenantOrganizationId && rows.some(function(item) { return item.id === selectedTenantOrganizationId; })) return selectedTenantOrganizationId;
+    if (authUser && authUser.organization && authUser.organization.id && rows.some(function(item) { return item.id === authUser.organization.id; })) {
+      return authUser.organization.id;
+    }
+    return rows[0] ? rows[0].id : (authUser && authUser.organization ? authUser.organization.id : "");
+  }, [authUser, selectedTenantOrganizationId, tenantOrganizations]);
+
+  var loadTenantUsers = useCallback(async function(preferredOrganizationId, quiet) {
+    if (!authUser || !canManageUsersForRole(authUser.role)) return [];
+    setTenantUsersLoading(true);
+    try {
+      var targetOrganizationId = authUser.role === "super_admin"
+        ? resolveTenantTargetOrganizationId(preferredOrganizationId)
+        : "";
+      var rows = await loadUsersApi(targetOrganizationId);
+      setTenantUsers(rows);
+      if (authUser.role === "super_admin" && targetOrganizationId) setSelectedTenantOrganizationId(targetOrganizationId);
+      return rows;
+    } catch (e) {
+      if (!quiet) showToast(e && e.message ? e.message : "Unable to load users", "error");
+      return [];
+    } finally {
+      setTenantUsersLoading(false);
+    }
+  }, [authUser, resolveTenantTargetOrganizationId, showToast]);
+
+  var loadOrganizationSettings = useCallback(async function(preferredOrganizationId, quiet) {
+    if (!authUser || !canManageSettingsForRole(authUser.role)) return null;
+    setOrganizationSettingsLoading(true);
+    try {
+      var targetOrganizationId = authUser.role === "super_admin"
+        ? resolveTenantTargetOrganizationId(preferredOrganizationId)
+        : "";
+      var settings = await loadOrganizationSettingsApi(targetOrganizationId);
+      setOrganizationSettingsForm({
+        clinic_name: String(settings.clinic_name || settings.clinicName || "").trim(),
+        logo_url: String(settings.logo_url || settings.logoUrl || "").trim(),
+        phone: String(settings.phone || "").trim(),
+        address: String(settings.address || "").trim()
+      });
+      if (authUser.role === "super_admin" && targetOrganizationId) setSelectedTenantOrganizationId(targetOrganizationId);
+      return settings;
+    } catch (e) {
+      if (!quiet) showToast(e && e.message ? e.message : "Unable to load organization settings", "error");
+      return null;
+    } finally {
+      setOrganizationSettingsLoading(false);
+    }
+  }, [authUser, resolveTenantTargetOrganizationId, showToast]);
+
+  var openOrganizationsAdmin = useCallback(async function() {
+    if (!authUser || !canManageOrganizations(authUser.role)) return;
+    resetTenantOrganizationForm();
+    await loadTenantOrganizations();
+    setStep("organizations");
+  }, [authUser, loadTenantOrganizations, resetTenantOrganizationForm]);
+
+  var openUsersAdmin = useCallback(async function() {
+    if (!authUser || !canManageUsersForRole(authUser.role)) return;
+    if (authUser.role === "super_admin" && !tenantOrganizations.length) {
+      var loadedOrganizations = await loadTenantOrganizations(true);
+      var targetId = resolveTenantTargetOrganizationId("", loadedOrganizations);
+      resetTenantUserForm();
+      await loadTenantUsers(targetId);
+    } else {
+      resetTenantUserForm();
+      await loadTenantUsers();
+    }
+    setStep("org-users");
+  }, [authUser, tenantOrganizations.length, loadTenantOrganizations, resolveTenantTargetOrganizationId, resetTenantUserForm, loadTenantUsers]);
+
+  var openOrganizationSettings = useCallback(async function() {
+    if (!authUser || !canManageSettingsForRole(authUser.role)) return;
+    if (authUser.role === "super_admin" && !tenantOrganizations.length) {
+      var loadedOrganizations = await loadTenantOrganizations(true);
+      var targetId = resolveTenantTargetOrganizationId("", loadedOrganizations);
+      await loadOrganizationSettings(targetId);
+    } else {
+      await loadOrganizationSettings();
+    }
+    setStep("org-settings");
+  }, [authUser, tenantOrganizations.length, loadTenantOrganizations, resolveTenantTargetOrganizationId, loadOrganizationSettings]);
+
   var exitSharedPortal = useCallback(function() {
     try {
       var nextUrl = new URL(window.location.href);
@@ -5839,16 +6207,24 @@ function RadReport() {
     } catch (e) {}
     setSharedPortalState(makeEmptySharedPortalState());
     setPatientPortalState(makeEmptyPatientPortalState());
+    if (authUser && authUser.username) {
+      setStep("home");
+      return;
+    }
+    if (authMode === "tenant") {
+      setStep("login");
+      return;
+    }
     try {
       var session = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
       if (session && session.username && session.role) {
-        setAuthUser(session);
+        setAuthUser(normalizeAuthUser(session));
         setStep("home");
         return;
       }
     } catch (e) {}
     setStep("login");
-  }, []);
+  }, [authMode, authUser]);
 
   var openPatientRegistry = useCallback(function(backStep) {
     setPatientRegistryBackStep(backStep || "home");
@@ -5896,8 +6272,8 @@ function RadReport() {
       .filter(Boolean)
       .sort(function(a, b) { return a.name.localeCompare(b.name); });
     setDoctorDirectory(normalized);
-    saveDoctorDirectory(normalized);
-  }, []);
+    saveDoctorDirectory(authStorageKey, normalized);
+  }, [authStorageKey]);
 
   var setDoctorFormField = useCallback(function(key, value) {
     if (key === "reset") {
@@ -5998,18 +6374,18 @@ function RadReport() {
   }, []);
 
   var persistAllPatients = useCallback(async function(next) {
-    if (!authUser || !authUser.username) return;
-    saveLocalPatients(authUser.username, next);
+    if (!authUser || !authStorageKey) return;
+    saveLocalPatients(authStorageKey, next);
     setSyncingPatients(true);
     try {
-      await cloudSavePatients(authUser.username, next);
+      await cloudSavePatients(authStorageKey, next);
       showToast("☁️ Patient registry synced", "success");
     } catch (e) {
       showToast("Patient registry cloud sync unavailable, saved locally", "info");
     } finally {
       setSyncingPatients(false);
     }
-  }, [authUser, showToast]);
+  }, [authStorageKey, authUser, showToast]);
 
   var applyRegistryPatientToStudy = useCallback(function(rawPatient, nextStep, quiet) {
     var regPatient = normalizeRegistryPatient(rawPatient);
@@ -6175,7 +6551,7 @@ function RadReport() {
     return merged.sort(function(a, b) { return a.code.localeCompare(b.code); });
   })();
 
-  var canFinalize = !!(authUser && (authUser.role === "Admin" || authUser.role === "Radiologist"));
+  var canFinalize = !!(authUser && canFinalizeForRole(authUser.role));
   var canDeleteDraft = canFinalize;
 
   var abnormalLex = ["fracture","mass","lesion","effusion","pneumothorax","hemorrhage","haemorrhage","occlusion","thrombosis","malignancy","tumor","tumour","infarct","appendicitis","perforation","aneurysm","embolism","consolidation"];
@@ -6277,18 +6653,18 @@ function RadReport() {
   }
 
   var persistAllRecords = useCallback(async function(next) {
-    if (!authUser || !authUser.username) return;
-    saveLocalRecords(authUser.username, next);
+    if (!authUser || !authStorageKey) return;
+    saveLocalRecords(authStorageKey, next);
     setSyncingRecords(true);
     try {
-      await cloudSaveRecords(authUser.username, next);
+      await cloudSaveRecords(authStorageKey, next);
       showToast("☁️ Record book synced", "success");
     } catch (e) {
       showToast("Record book cloud sync unavailable, saved locally", "info");
     } finally {
       setSyncingRecords(false);
     }
-  }, [authUser, showToast]);
+  }, [authStorageKey, authUser, showToast]);
 
   var buildRecordSnapshot = useCallback(function(meta) {
     if (!authUser || !authUser.username || !patient.name) return null;
@@ -6380,7 +6756,7 @@ function RadReport() {
         throw new Error("Patient portal username/password are missing. Save the patient in Patient Registry first.");
       }
       var sharePayload = buildShareableRecordPayload(Object.assign({}, sourceRecord, { patient: sharePatient }));
-      var shareResult = await cloudSaveSharedReport(authUser && authUser.username ? authUser.username : "", sharePayload, existingShare.token || "", window.location.origin);
+      var shareResult = await cloudSaveSharedReport(authStorageKey || (authUser && authUser.username ? authUser.username : ""), sharePayload, existingShare.token || "", window.location.origin);
       var shareUrl = shareResult.url || buildSharedPortalUrl(shareResult.token, window.location.origin);
       var sharePortal = {
         token: shareResult.token,
@@ -6423,7 +6799,7 @@ function RadReport() {
       });
       showToast(errMsg, "error");
     }
-  }, [authUser, persistAllPatients, persistAllRecords, savedPatients, showToast]);
+  }, [authStorageKey, authUser, persistAllPatients, persistAllRecords, savedPatients, showToast]);
 
   var shareCurrentPreview = useCallback(function() {
     if (!finalizedMeta) {
@@ -6711,81 +7087,81 @@ function RadReport() {
   }, [patient.reportingDoc, showToast]);
 
   var persistAllDrafts = useCallback(async function(next) {
-    if (!authUser || !authUser.username) return;
-    saveLocalDrafts(authUser.username, next);
+    if (!authUser || !authStorageKey) return;
+    saveLocalDrafts(authStorageKey, next);
     setSyncingDrafts(true);
     try {
-      await cloudSaveDrafts(authUser.username, next);
+      await cloudSaveDrafts(authStorageKey, next);
       showToast("☁️ Drafts synced", "success");
     } catch (e) {
       showToast("Cloud sync unavailable, saved locally", "info");
     } finally {
       setSyncingDrafts(false);
     }
-  }, [authUser, showToast]);
+  }, [authStorageKey, authUser, showToast]);
 
   useEffect(function() {
-    if (!authUser || !authUser.username) return;
-    var local = loadLocalDrafts(authUser.username);
+    if (!authUser || !authStorageKey) return;
+    var local = loadLocalDrafts(authStorageKey);
     setSavedReports(local);
     (async function() {
       try {
-        var cloud = await cloudLoadDrafts(authUser.username);
+        var cloud = await cloudLoadDrafts(authStorageKey);
         if (Array.isArray(cloud) && cloud.length) {
           setSavedReports(cloud);
-          saveLocalDrafts(authUser.username, cloud);
+          saveLocalDrafts(authStorageKey, cloud);
           showToast("☁️ Cloud drafts loaded", "success");
         }
       } catch (e) {
         if (!local.length) showToast("Cloud drafts unavailable, using local storage", "info");
       }
     })();
-  }, [authUser, showToast]);
+  }, [authStorageKey, authUser, showToast]);
 
   useEffect(function() {
-    if (!authUser || !authUser.username) {
+    if (!authUser || !authStorageKey) {
       setSavedPatients([]);
       return;
     }
-    var local = loadLocalPatients(authUser.username).map(normalizeRegistryPatient);
+    var local = loadLocalPatients(authStorageKey).map(normalizeRegistryPatient);
     setSavedPatients(local);
     (async function() {
       try {
-        var cloud = await cloudLoadPatients(authUser.username);
+        var cloud = await cloudLoadPatients(authStorageKey);
         if (Array.isArray(cloud) && cloud.length) {
           var normalized = cloud.map(normalizeRegistryPatient);
           setSavedPatients(normalized);
-          saveLocalPatients(authUser.username, normalized);
+          saveLocalPatients(authStorageKey, normalized);
         }
       } catch (e) {}
     })();
-  }, [authUser]);
+  }, [authStorageKey, authUser]);
 
   useEffect(function() {
-    if (!authUser || !authUser.username) {
+    if (!authUser || !authStorageKey) {
       setSavedRecords([]);
       return;
     }
-    var local = loadLocalRecords(authUser.username);
+    var local = loadLocalRecords(authStorageKey);
     setSavedRecords(local);
     (async function() {
       try {
-        var cloud = await cloudLoadRecords(authUser.username);
+        var cloud = await cloudLoadRecords(authStorageKey);
         if (Array.isArray(cloud) && cloud.length) {
           setSavedRecords(cloud);
-          saveLocalRecords(authUser.username, cloud);
+          saveLocalRecords(authStorageKey, cloud);
         }
       } catch (e) {}
     })();
-  }, [authUser]);
+  }, [authStorageKey, authUser]);
 
   useEffect(function() {
-    if (!authUser || !authUser.username) {
+    if (!authUser || !authStorageKey) {
       setCustomShortcuts([]);
       return;
     }
-    setCustomShortcuts(loadLocalShortcuts(authUser.username));
-  }, [authUser]);
+    setCustomShortcuts(loadLocalShortcuts(authStorageKey));
+  }, [authStorageKey, authUser]);
 
   useEffect(function() {
     if (!reportingModality) {
@@ -6807,22 +7183,54 @@ function RadReport() {
     if (selectedReportingPatientId) setSelectedReportingPatientId(null);
   }, [reportingDate, reportingModality, reportingQuery, savedPatients, selectedReportingPatientId]);
 
-  var doLogin = useCallback(function() {
+  var doLogin = useCallback(async function() {
     var uname = (loginForm.username || "").trim().toLowerCase();
     var pass = loginForm.password || "";
-    var found = users.find(function(u) { return u.username.toLowerCase() === uname && u.password === pass; });
-    if (!found) {
-      showToast("Invalid username or password", "error");
+    var orgSlug = String(loginForm.organization || "").trim().toLowerCase();
+    if (!uname || !pass) {
+      showToast("Username and password are required", "error");
       return;
     }
-    var session = { username: found.username, role: found.role };
-    setAuthUser(session);
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    setStep("home");
-    showToast("Welcome, " + found.role, "success");
-  }, [loginForm, users, showToast]);
+    setLoginLoading(true);
+    try {
+      if (authMode === "tenant") {
+        var nextUser = await tenantLogin({
+          organization_slug: orgSlug,
+          username: uname,
+          password: pass
+        });
+        if (orgSlug) {
+          try { localStorage.setItem(LAST_ORG_SLUG_KEY, orgSlug); } catch (e) {}
+        }
+        setAuthUser(nextUser);
+        setStep("home");
+        showToast("Welcome, " + getRoleLabel(nextUser && nextUser.role), "success");
+        return;
+      }
 
-  var doLogout = useCallback(function() {
+      var found = users.find(function(u) { return u.username.toLowerCase() === uname && u.password === pass; });
+      if (!found) {
+        showToast("Invalid username or password", "error");
+        return;
+      }
+      var session = normalizeAuthUser({ username: found.username, role: found.role });
+      setAuthUser(session);
+      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      setStep("home");
+      showToast("Welcome, " + found.role, "success");
+    } catch (e) {
+      showToast(e && e.message ? e.message : "Login failed", "error");
+    } finally {
+      setLoginLoading(false);
+    }
+  }, [authMode, loginForm, users, showToast]);
+
+  var doLogout = useCallback(async function() {
+    if (authMode === "tenant") {
+      try {
+        await tenantLogout();
+      } catch (e) {}
+    }
     localStorage.removeItem(SESSION_KEY);
     setAuthUser(null);
     setSavedReports([]);
@@ -6851,12 +7259,170 @@ function RadReport() {
     setShortcutAdminQuery("");
     setShortcutEditor(Object.assign({}, EMPTY_SHORTCUT_EDITOR));
     setGuidelineSelections({});
+    setTenantUsers([]);
+    setTenantOrganizations([]);
+    setSelectedTenantOrganizationId("");
+    resetTenantOrganizationForm();
+    resetTenantUserForm();
+    setOrganizationSettingsForm({ clinic_name: "", logo_url: "", phone: "", address: "" });
     setShareDialog({ open: false, loading: false, error: "", url: "", qrUrl: "", expiresAt: "", token: "", title: "" });
     setSharedPortalState(makeEmptySharedPortalState());
     setPatientPortalState(makeEmptyPatientPortalState());
     setActiveDraftId(null);
+    setDoctorDirectory([]);
+    if (authMode === "tenant") {
+      try {
+        var lastOrg = String(localStorage.getItem(LAST_ORG_SLUG_KEY) || "").trim();
+        setLoginForm({ organization: lastOrg, username: "", password: "" });
+      } catch (e) {
+        setLoginForm({ organization: "", username: "", password: "" });
+      }
+    } else {
+      setLoginForm({ organization: "", username: "", password: "" });
+    }
     setStep("login");
+  }, [authMode, resetTenantOrganizationForm, resetTenantUserForm]);
+
+  var setTenantOrganizationField = useCallback(function(key, value) {
+    setTenantOrganizationForm(function(prev) {
+      var next = Object.assign({}, prev);
+      if (key === "slug" || key === "subdomain") {
+        next[key] = slugifyWorkspaceValue(value);
+        return next;
+      }
+      next[key] = value;
+      if (key === "name") {
+        var currentNameSlug = slugifyWorkspaceValue(prev.name);
+        if (!prev.slug || prev.slug === currentNameSlug) next.slug = slugifyWorkspaceValue(value);
+        if (!prev.subdomain || prev.subdomain === currentNameSlug) next.subdomain = slugifyWorkspaceValue(value);
+        if (!prev.clinic_name) next.clinic_name = value;
+      }
+      return next;
+    });
   }, []);
+
+  var startEditTenantOrganization = useCallback(function(org) {
+    if (!org) return;
+    setEditingTenantOrganizationId(org.id || "");
+    setTenantOrganizationForm({
+      name: String(org.name || "").trim(),
+      slug: String(org.slug || "").trim(),
+      subdomain: String(org.subdomain || "").trim(),
+      clinic_name: String(org.clinic_name || org.clinicName || org.name || "").trim(),
+      phone: String(org.phone || "").trim(),
+      address: String(org.address || "").trim(),
+      logo_url: String(org.logo_url || org.logoUrl || "").trim(),
+      admin_username: "",
+      admin_password: "",
+      admin_full_name: ""
+    });
+  }, []);
+
+  var submitTenantOrganization = useCallback(async function() {
+    if (!authUser || !canManageOrganizations(authUser.role)) return;
+    if (!tenantOrganizationForm.name || !tenantOrganizationForm.slug) {
+      showToast("Organization name and slug are required", "error");
+      return;
+    }
+    try {
+      var payload = {
+        name: tenantOrganizationForm.name,
+        slug: tenantOrganizationForm.slug,
+        subdomain: tenantOrganizationForm.subdomain || tenantOrganizationForm.slug,
+        clinic_name: tenantOrganizationForm.clinic_name || tenantOrganizationForm.name,
+        phone: tenantOrganizationForm.phone,
+        address: tenantOrganizationForm.address,
+        logo_url: tenantOrganizationForm.logo_url
+      };
+      if (!editingTenantOrganizationId && tenantOrganizationForm.admin_username && tenantOrganizationForm.admin_password) {
+        payload.admin_user = {
+          username: tenantOrganizationForm.admin_username,
+          password: tenantOrganizationForm.admin_password,
+          full_name: tenantOrganizationForm.admin_full_name || tenantOrganizationForm.admin_username
+        };
+      }
+      await saveOrganizationApi(payload, editingTenantOrganizationId || "");
+      var rows = await loadTenantOrganizations(true);
+      if (rows.length) {
+        var targetId = editingTenantOrganizationId || (rows.find(function(item) { return item.slug === payload.slug; }) || {}).id || rows[0].id;
+        setSelectedTenantOrganizationId(targetId || "");
+      }
+      resetTenantOrganizationForm();
+      showToast(editingTenantOrganizationId ? "Organization updated" : "Organization created", "success");
+    } catch (e) {
+      showToast(e && e.message ? e.message : "Unable to save organization", "error");
+    }
+  }, [authUser, editingTenantOrganizationId, loadTenantOrganizations, resetTenantOrganizationForm, showToast, tenantOrganizationForm]);
+
+  var setTenantUserField = useCallback(function(key, value) {
+    setTenantUserForm(function(prev) {
+      var next = Object.assign({}, prev);
+      next[key] = value;
+      return next;
+    });
+  }, []);
+
+  var startEditTenantUser = useCallback(function(userRow) {
+    if (!userRow) return;
+    setEditingTenantUserId(userRow.id || "");
+    setTenantUserForm({
+      username: String(userRow.username || "").trim(),
+      password: "",
+      full_name: String(userRow.full_name || userRow.fullName || "").trim(),
+      email: String(userRow.email || "").trim(),
+      role: String(userRow.role || managedRoleOptions[0] || "radiologist").trim(),
+      status: String(userRow.status || "active").trim()
+    });
+    if (authUser && authUser.role === "super_admin" && userRow.organization_id) {
+      setSelectedTenantOrganizationId(userRow.organization_id);
+    }
+  }, [authUser, managedRoleOptions]);
+
+  var submitTenantUser = useCallback(async function() {
+    if (!authUser || !canManageUsersForRole(authUser.role)) return;
+    if (!tenantUserForm.username || (!editingTenantUserId && !tenantUserForm.password)) {
+      showToast("Username and password are required for a new user", "error");
+      return;
+    }
+    try {
+      var targetOrganizationId = authUser.role === "super_admin"
+        ? resolveTenantTargetOrganizationId(selectedTenantOrganizationId)
+        : "";
+      if (authUser.role === "super_admin" && !targetOrganizationId) {
+        showToast("Select an organization first", "error");
+        return;
+      }
+      var payload = {
+        organization_id: targetOrganizationId,
+        username: tenantUserForm.username,
+        password: tenantUserForm.password,
+        full_name: tenantUserForm.full_name,
+        email: tenantUserForm.email,
+        role: tenantUserForm.role,
+        status: tenantUserForm.status
+      };
+      await saveUserApi(payload, editingTenantUserId || "");
+      await loadTenantUsers(targetOrganizationId, true);
+      resetTenantUserForm();
+      showToast(editingTenantUserId ? "User updated" : "User created", "success");
+    } catch (e) {
+      showToast(e && e.message ? e.message : "Unable to save user", "error");
+    }
+  }, [authUser, editingTenantUserId, loadTenantUsers, resetTenantUserForm, resolveTenantTargetOrganizationId, selectedTenantOrganizationId, showToast, tenantUserForm]);
+
+  var saveCurrentOrganizationSettings = useCallback(async function() {
+    if (!authUser || !canManageSettingsForRole(authUser.role)) return;
+    try {
+      var targetOrganizationId = authUser.role === "super_admin"
+        ? resolveTenantTargetOrganizationId(selectedTenantOrganizationId)
+        : "";
+      await saveOrganizationSettingsApi(organizationSettingsForm, targetOrganizationId);
+      showToast("Organization settings saved", "success");
+      if (authUser.role === "super_admin") await loadTenantOrganizations(true);
+    } catch (e) {
+      showToast(e && e.message ? e.message : "Unable to save organization settings", "error");
+    }
+  }, [authUser, loadTenantOrganizations, organizationSettingsForm, resolveTenantTargetOrganizationId, selectedTenantOrganizationId, showToast]);
 
   var saveDraft = useCallback(function(name) {
     if (!authUser) return;
@@ -7029,7 +7595,7 @@ function RadReport() {
   }, [shortcutEditor, allShortcuts, showToast]);
 
   var saveShortcutFromEditor = useCallback(function() {
-    if (!authUser || !authUser.username) {
+    if (!authUser || !authStorageKey) {
       showToast("Login required to save shortcut edits", "error");
       return;
     }
@@ -7069,13 +7635,13 @@ function RadReport() {
     var next = customShortcuts.filter(function(sc) { return normalizeShortcutCode(sc.code) !== code; });
     next.unshift(candidate);
     setCustomShortcuts(next);
-    saveLocalShortcuts(authUser.username, next);
+    saveLocalShortcuts(authStorageKey, next);
     showToast((exists ? "Updated " : "Saved ") + candidate.code, "success");
     setShortcutEditor(shortcutToEditorDraft(candidate));
-  }, [authUser, shortcutEditor, customShortcuts, showToast]);
+  }, [authStorageKey, authUser, shortcutEditor, customShortcuts, showToast]);
 
   var deleteCustomShortcut = useCallback(function(code) {
-    if (!authUser || !authUser.username) return;
+    if (!authUser || !authStorageKey) return;
     var k = normalizeShortcutCode(code);
     var exists = customShortcuts.some(function(sc) { return normalizeShortcutCode(sc.code) === k; });
     if (!exists) {
@@ -7084,16 +7650,65 @@ function RadReport() {
     }
     var next = customShortcuts.filter(function(sc) { return normalizeShortcutCode(sc.code) !== k; });
     setCustomShortcuts(next);
-    saveLocalShortcuts(authUser.username, next);
+    saveLocalShortcuts(authStorageKey, next);
     if (normalizeShortcutCode(shortcutEditor.code) === k) resetShortcutEditor();
     showToast("Removed custom shortcut " + k, "success");
-  }, [authUser, customShortcuts, shortcutEditor, resetShortcutEditor, showToast]);
+  }, [authStorageKey, authUser, customShortcuts, shortcutEditor, resetShortcutEditor, showToast]);
 
-  useEffect(function() {
+  var bootLegacyAuth = useCallback(function() {
+    setAuthMode("legacy");
     seedUsers();
     var all = loadUsers();
     setUsers(all);
-    setDoctorDirectory(loadDoctorDirectory());
+    setLoginForm(function(prev) {
+      return Object.assign({}, prev, { organization: "" });
+    });
+    try {
+      var s = normalizeAuthUser(JSON.parse(localStorage.getItem(SESSION_KEY) || "null"));
+      if (s && s.username && s.role) {
+        setAuthUser(s);
+        setStep("home");
+        return;
+      }
+    } catch (e) {}
+    setAuthUser(null);
+    setStep("login");
+  }, []);
+
+  var bootstrapPrimarySession = useCallback(async function() {
+    try {
+      var tenantState = await tenantAuthMe();
+      if (tenantState.ok && tenantState.session && tenantState.session.user) {
+        var nextUser = normalizeAuthUser(tenantState.session.user);
+        setAuthMode("tenant");
+        setAuthUser(nextUser);
+        setStep("home");
+        if (nextUser && nextUser.organization && nextUser.organization.slug) {
+          try { localStorage.setItem(LAST_ORG_SLUG_KEY, nextUser.organization.slug); } catch (e) {}
+        }
+        return;
+      }
+      if (tenantState.status === 401) {
+        setAuthMode("tenant");
+        try {
+          var lastOrgSlug = String(localStorage.getItem(LAST_ORG_SLUG_KEY) || "").trim();
+          if (lastOrgSlug) {
+            setLoginForm(function(prev) {
+              return Object.assign({}, prev, { organization: prev.organization || lastOrgSlug });
+            });
+          }
+        } catch (e) {}
+        setAuthUser(null);
+        setStep("login");
+        return;
+      }
+      bootLegacyAuth();
+    } catch (e) {
+      bootLegacyAuth();
+    }
+  }, [bootLegacyAuth]);
+
+  useEffect(function() {
     var shareToken = "";
     var portalUsername = "";
     try {
@@ -7127,14 +7742,16 @@ function RadReport() {
       setStep("portal");
       return;
     }
-    try {
-      var s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
-      if (s && s.username && s.role) {
-        setAuthUser(s);
-        setStep("home");
-      }
-    } catch (e) {}
-  }, []);
+    bootstrapPrimarySession();
+  }, [bootstrapPrimarySession]);
+
+  useEffect(function() {
+    if (!authStorageKey) {
+      setDoctorDirectory([]);
+      return;
+    }
+    setDoctorDirectory(loadDoctorDirectory(authStorageKey));
+  }, [authStorageKey]);
 
   var handleVoiceResult = useCallback(function(key, text) {
     if (key === "impression") {
@@ -8119,18 +8736,289 @@ function RadReport() {
     </div>
   );
 
+  if (step === "organizations") return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:"linear-gradient(180deg,#07111b,#0d2137)",padding:24}}>
+      <style>{CSS}</style>
+      <Toast msg={toast&&toast.msg} type={toast&&toast.type} onClose={function(){setToast(null);}} />
+      <div style={{maxWidth:1220,margin:"0 auto"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,marginBottom:20,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontFamily:"'DM Serif Display',serif",fontSize:34,color:"#fff"}}>Organizations</div>
+            <div style={{fontSize:13,color:"rgba(255,255,255,.7)"}}>Create, edit, and control tenant workspaces without touching the reporting UI.</div>
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            <button style={obtn("#22D3EE")} onClick={function(){ setStep("home"); }}>Back Home</button>
+            <button style={btn("#0D2137")} onClick={function(){ loadTenantOrganizations(); }}>Refresh</button>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.1fr) minmax(340px,.9fr)",gap:18,alignItems:"start"}}>
+          <div style={{background:"#fff",borderRadius:20,padding:20,boxShadow:"0 18px 44px rgba(0,0,0,.18)"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+              <div style={{fontSize:18,fontWeight:800,color:"#0D2137"}}>Workspace Directory</div>
+              <div style={{fontSize:12,color:"#64748B"}}>{tenantOrganizations.length} organizations</div>
+            </div>
+            {tenantOrganizationsLoading ? (
+              <div style={{padding:"22px 0",fontSize:13,color:"#64748B"}}>Loading organizations…</div>
+            ) : tenantOrganizations.length ? (
+              <div style={{display:"grid",gap:12}}>
+                {tenantOrganizations.map(function(org){
+                  var isSelected = selectedTenantOrganizationId === org.id;
+                  return (
+                    <div key={org.id} style={{border:"1px solid " + (isSelected ? "#38BDF8" : "#E2E8F0"),borderRadius:16,padding:16,background:isSelected ? "#F0F9FF" : "#fff"}}>
+                      <div style={{display:"flex",alignItems:"start",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
+                        <div style={{minWidth:0,flex:"1 1 320px"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                            <div style={{fontSize:17,fontWeight:800,color:"#0F172A"}}>{org.name}</div>
+                            <span style={{padding:"4px 8px",borderRadius:999,fontSize:10,fontWeight:800,letterSpacing:"1px",textTransform:"uppercase",background:org.status === "active" ? "#DCFCE7" : "#FEE2E2",color:org.status === "active" ? "#166534" : "#991B1B"}}>{org.status}</span>
+                          </div>
+                          <div style={{fontSize:12,color:"#475569",marginTop:6}}>Slug: <b>{org.slug || "—"}</b>{org.subdomain ? " · Subdomain: " + org.subdomain : ""}</div>
+                          <div style={{fontSize:12,color:"#475569",marginTop:6}}>{org.clinic_name || org.name}{org.phone ? " · " + org.phone : ""}</div>
+                          <div style={{fontSize:12,color:"#64748B",marginTop:6}}>{org.address || "No address saved"} · {org.user_count || 0} users</div>
+                        </div>
+                        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                          <button style={obtn("#0D2137")} onClick={function(){ setSelectedTenantOrganizationId(org.id); startEditTenantOrganization(org); }}>Edit</button>
+                          <button style={obtn(org.status === "active" ? "#991B1B" : "#166534")} onClick={async function(){
+                            try {
+                              await saveOrganizationApi({ status: org.status === "active" ? "inactive" : "active" }, org.id);
+                              await loadTenantOrganizations(true);
+                              showToast("Organization status updated", "success");
+                            } catch (e) {
+                              showToast(e && e.message ? e.message : "Unable to update organization", "error");
+                            }
+                          }}>{org.status === "active" ? "Disable" : "Enable"}</button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{padding:"22px 0",fontSize:13,color:"#64748B"}}>No organizations created yet.</div>
+            )}
+          </div>
+
+          <div style={{background:"#fff",borderRadius:20,padding:20,boxShadow:"0 18px 44px rgba(0,0,0,.18)"}}>
+            <div style={{fontSize:18,fontWeight:800,color:"#0D2137",marginBottom:14}}>{editingTenantOrganizationId ? "Edit Organization" : "New Organization"}</div>
+            <label style={lbl}>Organization Name</label>
+            <input className="ri" style={inp({marginBottom:12})} value={tenantOrganizationForm.name} onChange={function(e){ setTenantOrganizationField("name", e.target.value); }} placeholder="Al Noor Diagnostic Centre" />
+            <label style={lbl}>Slug</label>
+            <input className="ri" style={inp({marginBottom:12})} value={tenantOrganizationForm.slug} onChange={function(e){ setTenantOrganizationField("slug", e.target.value); }} placeholder="alnoor" />
+            <label style={lbl}>Future Subdomain</label>
+            <input className="ri" style={inp({marginBottom:12})} value={tenantOrganizationForm.subdomain} onChange={function(e){ setTenantOrganizationField("subdomain", e.target.value); }} placeholder="alnoor" />
+            <label style={lbl}>Clinic Display Name</label>
+            <input className="ri" style={inp({marginBottom:12})} value={tenantOrganizationForm.clinic_name} onChange={function(e){ setTenantOrganizationField("clinic_name", e.target.value); }} placeholder="Al Noor Diagnostic Centre" />
+            <label style={lbl}>Phone</label>
+            <input className="ri" style={inp({marginBottom:12})} value={tenantOrganizationForm.phone} onChange={function(e){ setTenantOrganizationField("phone", e.target.value); }} placeholder="+92 300 0000000" />
+            <label style={lbl}>Address</label>
+            <textarea className="ri" style={inp({marginBottom:12,minHeight:96,paddingTop:10})} value={tenantOrganizationForm.address} onChange={function(e){ setTenantOrganizationField("address", e.target.value); }} placeholder="Clinic address" />
+            <label style={lbl}>Logo URL</label>
+            <input className="ri" style={inp({marginBottom:12})} value={tenantOrganizationForm.logo_url} onChange={function(e){ setTenantOrganizationField("logo_url", e.target.value); }} placeholder="https://..." />
+            {!editingTenantOrganizationId && (
+              <>
+                <div style={{fontSize:12,fontWeight:800,color:"#0D2137",margin:"6px 0 10px"}}>Initial Organization Admin (optional)</div>
+                <label style={lbl}>Admin Username</label>
+                <input className="ri" style={inp({marginBottom:12})} value={tenantOrganizationForm.admin_username} onChange={function(e){ setTenantOrganizationField("admin_username", e.target.value); }} placeholder="alnoor_admin" />
+                <label style={lbl}>Admin Full Name</label>
+                <input className="ri" style={inp({marginBottom:12})} value={tenantOrganizationForm.admin_full_name} onChange={function(e){ setTenantOrganizationField("admin_full_name", e.target.value); }} placeholder="Al Noor Administrator" />
+                <label style={lbl}>Admin Password</label>
+                <input type="password" className="ri" style={inp({marginBottom:14})} value={tenantOrganizationForm.admin_password} onChange={function(e){ setTenantOrganizationField("admin_password", e.target.value); }} placeholder="Set a strong password" />
+              </>
+            )}
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <button style={btn("#0D2137")} onClick={submitTenantOrganization}>{editingTenantOrganizationId ? "Update Organization" : "Create Organization"}</button>
+              <button style={obtn("#0D2137")} onClick={resetTenantOrganizationForm}>Clear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (step === "org-users") return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:"linear-gradient(180deg,#07111b,#0d2137)",padding:24}}>
+      <style>{CSS}</style>
+      <Toast msg={toast&&toast.msg} type={toast&&toast.type} onClose={function(){setToast(null);}} />
+      <div style={{maxWidth:1220,margin:"0 auto"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,marginBottom:20,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontFamily:"'DM Serif Display',serif",fontSize:34,color:"#fff"}}>Organization Users</div>
+            <div style={{fontSize:13,color:"rgba(255,255,255,.7)"}}>Role-based user administration with strict organization boundaries.</div>
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            <button style={obtn("#22D3EE")} onClick={function(){ setStep("home"); }}>Back Home</button>
+            <button style={btn("#0D2137")} onClick={function(){ loadTenantUsers(selectedTenantOrganizationId); }}>Refresh</button>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.1fr) minmax(340px,.9fr)",gap:18,alignItems:"start"}}>
+          <div style={{background:"#fff",borderRadius:20,padding:20,boxShadow:"0 18px 44px rgba(0,0,0,.18)"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:14}}>
+              <div style={{fontSize:18,fontWeight:800,color:"#0D2137"}}>User List</div>
+              {authUser && authUser.role === "super_admin" && (
+                <select className="ri" style={inp({width:260})} value={selectedTenantOrganizationId} onChange={function(e){
+                  var nextId = e.target.value;
+                  setSelectedTenantOrganizationId(nextId);
+                  loadTenantUsers(nextId);
+                }}>
+                  <option value="">Select organization</option>
+                  {tenantOrganizations.map(function(org){
+                    return <option key={org.id} value={org.id}>{org.name} ({org.slug})</option>;
+                  })}
+                </select>
+              )}
+            </div>
+            {tenantUsersLoading ? (
+              <div style={{padding:"22px 0",fontSize:13,color:"#64748B"}}>Loading users…</div>
+            ) : tenantUsers.length ? (
+              <div style={{display:"grid",gap:12}}>
+                {tenantUsers.map(function(userRow){
+                  return (
+                    <div key={userRow.id} style={{border:"1px solid #E2E8F0",borderRadius:16,padding:16,background:"#fff"}}>
+                      <div style={{display:"flex",alignItems:"start",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
+                        <div style={{minWidth:0,flex:"1 1 320px"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                            <div style={{fontSize:16,fontWeight:800,color:"#0F172A"}}>{userRow.full_name || userRow.username}</div>
+                            <span style={{padding:"4px 8px",borderRadius:999,fontSize:10,fontWeight:800,letterSpacing:"1px",textTransform:"uppercase",background:userRow.status === "active" ? "#DCFCE7" : "#FEE2E2",color:userRow.status === "active" ? "#166534" : "#991B1B"}}>{userRow.status}</span>
+                          </div>
+                          <div style={{fontSize:12,color:"#475569",marginTop:6}}>{userRow.username}{userRow.email ? " · " + userRow.email : ""}</div>
+                          <div style={{fontSize:12,color:"#64748B",marginTop:6}}>{getRoleLabel(userRow.role)}{userRow.organization_name ? " · " + userRow.organization_name : ""}</div>
+                        </div>
+                        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                          <button style={obtn("#0D2137")} onClick={function(){ startEditTenantUser(userRow); }}>Edit</button>
+                          <button style={obtn(userRow.status === "active" ? "#991B1B" : "#166534")} onClick={async function(){
+                            try {
+                              await saveUserApi({ status: userRow.status === "active" ? "inactive" : "active" }, userRow.id);
+                              await loadTenantUsers(authUser && authUser.role === "super_admin" ? selectedTenantOrganizationId : "");
+                              showToast("User status updated", "success");
+                            } catch (e) {
+                              showToast(e && e.message ? e.message : "Unable to update user", "error");
+                            }
+                          }}>{userRow.status === "active" ? "Disable" : "Enable"}</button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{padding:"22px 0",fontSize:13,color:"#64748B"}}>No users found for this organization.</div>
+            )}
+          </div>
+
+          <div style={{background:"#fff",borderRadius:20,padding:20,boxShadow:"0 18px 44px rgba(0,0,0,.18)"}}>
+            <div style={{fontSize:18,fontWeight:800,color:"#0D2137",marginBottom:14}}>{editingTenantUserId ? "Edit User" : "New User"}</div>
+            <label style={lbl}>Username</label>
+            <input className="ri" style={inp({marginBottom:12})} value={tenantUserForm.username} onChange={function(e){ setTenantUserField("username", e.target.value); }} placeholder="radiologist_1" />
+            <label style={lbl}>{editingTenantUserId ? "Reset Password (optional)" : "Password"}</label>
+            <input type="password" className="ri" style={inp({marginBottom:12})} value={tenantUserForm.password} onChange={function(e){ setTenantUserField("password", e.target.value); }} placeholder={editingTenantUserId ? "Leave blank to keep current password" : "Set a strong password"} />
+            <label style={lbl}>Full Name</label>
+            <input className="ri" style={inp({marginBottom:12})} value={tenantUserForm.full_name} onChange={function(e){ setTenantUserField("full_name", e.target.value); }} placeholder="Dr Syed Hadi Ali" />
+            <label style={lbl}>Email</label>
+            <input className="ri" style={inp({marginBottom:12})} value={tenantUserForm.email} onChange={function(e){ setTenantUserField("email", e.target.value); }} placeholder="user@example.com" />
+            <label style={lbl}>Role</label>
+            <select className="ri" style={inp({marginBottom:12})} value={tenantUserForm.role} onChange={function(e){ setTenantUserField("role", e.target.value); }}>
+              {managedRoleOptions.map(function(role){
+                return <option key={role} value={role}>{getRoleLabel(role)}</option>;
+              })}
+            </select>
+            <label style={lbl}>Status</label>
+            <select className="ri" style={inp({marginBottom:14})} value={tenantUserForm.status} onChange={function(e){ setTenantUserField("status", e.target.value); }}>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <button style={btn("#0D2137")} onClick={submitTenantUser}>{editingTenantUserId ? "Update User" : "Create User"}</button>
+              <button style={obtn("#0D2137")} onClick={function(){ resetTenantUserForm(); }}>Clear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (step === "org-settings") return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:"linear-gradient(180deg,#07111b,#0d2137)",padding:24}}>
+      <style>{CSS}</style>
+      <Toast msg={toast&&toast.msg} type={toast&&toast.type} onClose={function(){setToast(null);}} />
+      <div style={{maxWidth:1040,margin:"0 auto"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,marginBottom:20,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontFamily:"'DM Serif Display',serif",fontSize:34,color:"#fff"}}>Organization Settings</div>
+            <div style={{fontSize:13,color:"rgba(255,255,255,.7)"}}>Clinic branding and contact details for the active tenant.</div>
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            <button style={obtn("#22D3EE")} onClick={function(){ setStep("home"); }}>Back Home</button>
+            <button style={btn("#0D2137")} onClick={function(){ loadOrganizationSettings(selectedTenantOrganizationId); }}>Refresh</button>
+          </div>
+        </div>
+        <div style={{background:"#fff",borderRadius:20,padding:22,boxShadow:"0 18px 44px rgba(0,0,0,.18)"}}>
+          {authUser && authUser.role === "super_admin" && (
+            <>
+              <label style={lbl}>Organization</label>
+              <select className="ri" style={inp({marginBottom:14,maxWidth:360})} value={selectedTenantOrganizationId} onChange={function(e){
+                var nextId = e.target.value;
+                setSelectedTenantOrganizationId(nextId);
+                loadOrganizationSettings(nextId);
+              }}>
+                <option value="">Select organization</option>
+                {tenantOrganizations.map(function(org){
+                  return <option key={org.id} value={org.id}>{org.name} ({org.slug})</option>;
+                })}
+              </select>
+            </>
+          )}
+          {organizationSettingsLoading ? (
+            <div style={{padding:"12px 0",fontSize:13,color:"#64748B"}}>Loading settings…</div>
+          ) : (
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16}}>
+              <div>
+                <label style={lbl}>Clinic Name</label>
+                <input className="ri" style={inp({marginBottom:12})} value={organizationSettingsForm.clinic_name} onChange={function(e){ setOrganizationSettingsForm(function(prev){ return Object.assign({}, prev, { clinic_name: e.target.value }); }); }} placeholder="Clinic display name" />
+                <label style={lbl}>Phone</label>
+                <input className="ri" style={inp({marginBottom:12})} value={organizationSettingsForm.phone} onChange={function(e){ setOrganizationSettingsForm(function(prev){ return Object.assign({}, prev, { phone: e.target.value }); }); }} placeholder="+92 300 0000000" />
+              </div>
+              <div>
+                <label style={lbl}>Logo URL</label>
+                <input className="ri" style={inp({marginBottom:12})} value={organizationSettingsForm.logo_url} onChange={function(e){ setOrganizationSettingsForm(function(prev){ return Object.assign({}, prev, { logo_url: e.target.value }); }); }} placeholder="https://..." />
+                <label style={lbl}>Address</label>
+                <textarea className="ri" style={inp({marginBottom:12,minHeight:96,paddingTop:10})} value={organizationSettingsForm.address} onChange={function(e){ setOrganizationSettingsForm(function(prev){ return Object.assign({}, prev, { address: e.target.value }); }); }} placeholder="Clinic address" />
+              </div>
+            </div>
+          )}
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:12}}>
+            <button style={btn("#0D2137")} onClick={saveCurrentOrganizationSettings}>Save Settings</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   if (step === "login") return (
     <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:"linear-gradient(140deg,#06101b,#0f2440)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <style>{CSS}</style>
       <Toast msg={toast&&toast.msg} type={toast&&toast.type} onClose={function(){setToast(null);}} />
       <div style={{width:"100%",maxWidth:460,background:"#fff",borderRadius:16,padding:24,boxShadow:"0 20px 50px rgba(0,0,0,.35)"}}>
         <div style={{fontFamily:"'DM Serif Display',serif",fontSize:30,color:"#0D2137",marginBottom:8}}>RadReport Pro</div>
-        <div style={{fontSize:13,color:"#5A7090",marginBottom:18}}>Role-based access: Admin, Radiologist, Resident, Typist.</div>
+        <div style={{fontSize:13,color:"#5A7090",marginBottom:18}}>
+          {authMode === "checking"
+            ? "Checking your workspace session…"
+            : authMode === "tenant"
+              ? "Secure organization login. Use clinic slug now, subdomains later."
+              : "Legacy single-clinic access is active on this deployment."}
+        </div>
+        {authMode === "tenant" && (
+          <>
+            <label style={lbl}>Organization Slug</label>
+            <input className="ri" style={inp({marginBottom:8})} value={loginForm.organization} onChange={function(e){setLoginForm(function(p){ return Object.assign({}, p, { organization: e.target.value.toLowerCase() }); });}} placeholder="e.g. alnoor" />
+            <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Leave blank only for the platform super admin.</div>
+          </>
+        )}
         <label style={lbl}>Username</label>
         <input className="ri" style={inp({marginBottom:12})} value={loginForm.username} onChange={function(e){setLoginForm(function(p){ return Object.assign({}, p, { username: e.target.value }); });}} placeholder="e.g. radiologist" />
         <label style={lbl}>Password</label>
         <input type="password" className="ri" style={inp({marginBottom:14})} value={loginForm.password} onChange={function(e){setLoginForm(function(p){ return Object.assign({}, p, { password: e.target.value }); });}} placeholder="••••••••" />
-        <button style={btn("#0D2137")} onClick={doLogin}>Sign In</button>
+        <button style={Object.assign({}, btn("#0D2137"), (loginLoading || authMode === "checking") ? {opacity:.65,cursor:"wait"} : {})} disabled={loginLoading || authMode === "checking"} onClick={doLogin}>
+          {authMode === "checking" ? "Checking Session…" : loginLoading ? "Signing In…" : "Sign In"}
+        </button>
       </div>
     </div>
   );
@@ -8175,8 +9063,22 @@ function RadReport() {
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
           {authUser && (
             <div style={{padding:"8px 12px",borderRadius:20,background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.12)",fontSize:11,color:"rgba(255,255,255,.7)"}}>
-              {authUser.username} · {authUser.role}
+              {authUser.username} · {authRoleLabel}
             </div>
+          )}
+          {authMode === "tenant" && authOrganizationName && (
+            <div style={{padding:"8px 12px",borderRadius:20,background:"rgba(34,211,238,.08)",border:"1px solid rgba(34,211,238,.2)",fontSize:11,color:"#A5F3FC"}}>
+              {authOrganizationName}{authOrganizationSlug ? (" · " + authOrganizationSlug) : ""}
+            </div>
+          )}
+          {authMode === "tenant" && authUser && canManageOrganizations(authUser.role) && (
+            <button style={obtn("#22D3EE")} onClick={openOrganizationsAdmin}>Organizations</button>
+          )}
+          {authMode === "tenant" && authUser && canManageUsersForRole(authUser.role) && (
+            <button style={obtn("#22D3EE")} onClick={openUsersAdmin}>Users</button>
+          )}
+          {authMode === "tenant" && authUser && canManageSettingsForRole(authUser.role) && (
+            <button style={obtn("#22D3EE")} onClick={openOrganizationSettings}>Org Settings</button>
           )}
           <button style={obtn("#22D3EE")} onClick={function(){ openAnalytics("home"); }}>Analytics</button>
           <button style={Object.assign({}, obtn("#22D3EE"), {padding:"6px 10px",fontSize:11})} onClick={function(){ openShortcutManager("home"); }}>Shortcut Manager</button>
