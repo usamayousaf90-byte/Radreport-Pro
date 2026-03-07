@@ -5844,26 +5844,31 @@ function RadReport() {
       if (r.tag === "ab" && hasNormWord && !hasAbnWord) contradictions.push(r.sec + " > " + r.field + " tagged ABNORMAL but text sounds normal.");
     });
     if (contradictions.length) {
-      blockers = blockers.concat(contradictions.slice(0, 4));
-      score -= Math.min(24, contradictions.length * 6);
+      warnings = warnings.concat(contradictions.slice(0, 4));
+      score -= Math.min(18, contradictions.length * 4);
+      suggestions.push("Review field tags and wording before final sign-off.");
     }
 
+    var abnormalHits = filledRows.filter(function(r) {
+      var low = r.val.toLowerCase();
+      return abnormalLex.some(function(w) { return low.indexOf(w) !== -1; }) || r.tag === "ab";
+    });
     var criticalHits = filledRows.filter(function(r) {
       var low = r.val.toLowerCase();
-      return criticalLex.some(function(w) { return low.indexOf(w) !== -1; }) || r.tag === "ab";
+      return criticalLex.some(function(w) { return low.indexOf(w) !== -1; });
     });
-    if (criticalHits.length && urgency === "Routine") {
-      blockers.push("Urgency mismatch: abnormal/critical findings present but urgency is Routine.");
-      score -= 20;
+    if (abnormalHits.length && urgency === "Routine") {
+      warnings.push("Abnormal findings are present while urgency is set to Routine.");
+      score -= criticalHits.length ? 12 : 6;
       suggestions.push("Set urgency to Urgent/Critical where appropriate.");
     }
 
-    if (criticalHits.length && !impression.trim()) {
+    if (abnormalHits.length && !impression.trim()) {
       blockers.push("Dangerous omission: abnormal findings exist but Impression is empty.");
       score -= 25;
     }
 
-    if (criticalHits.length && !recommendation.trim()) {
+    if (abnormalHits.length && !recommendation.trim()) {
       warnings.push("Recommendation section is empty despite abnormal/critical findings.");
       score -= 10;
       suggestions.push("Add follow-up/communication recommendation.");
@@ -8743,6 +8748,7 @@ function RadReport() {
     return (
       <div style={{fontFamily:"'DM Sans',sans-serif",background:C.bg,minHeight:"100vh"}}>
         <style>{CSS}</style>
+        <Toast msg={toast&&toast.msg} type={toast&&toast.type} onClose={function(){setToast(null);}} />
         <AppHdr onBack backTo="impression" setStep={setStep} sub="Report Preview"
           right={<div style={{display:"flex",gap:10}}>
             <button style={obtn("#fff")} onClick={function(){ setStep("impression"); }}>← Impression</button>
@@ -8805,7 +8811,7 @@ function RadReport() {
               </div>
             </div>
             <div style={{padding:"14px 32px",background:"#F8FAFC",borderBottom:"1px solid "+C.bdr,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:14}}>
-              {[["Patient",patient.name],["Age / Sex",patient.age+" / "+patient.sex],["Referred By",patient.refBy||"—"],["Scan and Reported by",patient.reportingDoc||"—"]].map(function(x){return(
+              {[["Patient",patient.name],["MRNO",patient.mrno || "—"],["Age / Sex",patient.age+" / "+patient.sex],["Referred By",patient.refBy||"—"]].map(function(x){return(
                 <div key={x[0]}><div style={{fontSize:10,fontWeight:700,color:C.soft,textTransform:"uppercase",letterSpacing:.8}}>{x[0]}</div><div style={{fontSize:14,fontWeight:600,color:C.navy,marginTop:2}}>{x[1]||"—"}</div></div>
               );})}
             </div>
