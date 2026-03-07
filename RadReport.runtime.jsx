@@ -5268,6 +5268,7 @@ function RadReport() {
   var [patientRegistryForm, setPatientRegistryForm] = useState(makeEmptyRegistryPatient);
   var [selectedRegistryPatientId, setSelectedRegistryPatientId] = useState(null);
   var [reportingBackStep, setReportingBackStep] = useState("home");
+  var [templateBackStep, setTemplateBackStep] = useState("patient");
   var [reportingDate, setReportingDate] = useState(getTodayISO());
   var [reportingQuery, setReportingQuery] = useState("");
   var [reportingModality, setReportingModality] = useState("");
@@ -5519,8 +5520,9 @@ function RadReport() {
     setTemplateQuery("");
     setModality(nextModalityValue);
     setRegion(nextRegionValue);
-    applyRegistryPatientToStudy(queuedPatient, "patient", true);
-    showToast("Patient loaded. Continue with " + nextModalityValue + " › " + nextRegionValue, "success");
+    setTemplateBackStep("reporting");
+    applyRegistryPatientToStudy(queuedPatient, "template", true);
+    showToast("Patient loaded. Opened " + nextModalityValue + " › " + nextRegionValue + " report editor", "success");
     return true;
   }, [clearReportWorkspace, applyRegistryPatientToStudy, showToast, reportingDate]);
 
@@ -5910,6 +5912,7 @@ function RadReport() {
     setPatientRegistryQuery("");
     setSelectedRegistryPatientId(null);
     setReportingBackStep("home");
+    setTemplateBackStep("patient");
     setReportingDate(getTodayISO());
     setReportingQuery("");
     setReportingModality("");
@@ -5974,6 +5977,7 @@ function RadReport() {
   var loadDraft = useCallback(function(draft) {
     importedTemplateSeedRef.current = (draft && draft.modality && draft.region) ? (draft.modality + "__" + draft.region) : "";
     setActiveDraftId(draft.id);
+    setTemplateBackStep("patient");
     setModality(draft.modality || null);
     setRegion(draft.region || null);
     setPatient(Object.assign(makeEmptyPatient(), draft.patient || {}));
@@ -5991,6 +5995,7 @@ function RadReport() {
     if (!record) return;
     importedTemplateSeedRef.current = (record && record.modality && record.region) ? (record.modality + "__" + record.region) : "";
     setActiveDraftId(record.sourceDraftId || null);
+    setTemplateBackStep("patient");
     setModality(record.modality || null);
     setRegion(record.region || null);
     setPatient(Object.assign(makeEmptyPatient(), record.patient || {}));
@@ -6157,6 +6162,7 @@ function RadReport() {
 
   var clearReportWorkspace = useCallback(function() {
     importedTemplateSeedRef.current = "";
+    setTemplateBackStep("patient");
     setPatient(makeEmptyPatient());
     setFindings({});
     setTags({});
@@ -6194,6 +6200,7 @@ function RadReport() {
   var beginTemplateSelection = useCallback(function(nextModality, nextRegion) {
     clearReportWorkspace();
     setTemplateQuery("");
+    setTemplateBackStep("patient");
     setModality(nextModality || null);
     setRegion(nextRegion || null);
     setStep("patient");
@@ -7214,7 +7221,7 @@ function RadReport() {
                       Registered request: {selectedReportingPatient.requestedModality || "—"} / {selectedReportingPatient.requestedRegion || "—"}
                     </div>
                     <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:16}}>
-                      <button style={Object.assign({}, btn(C.col), (!reportingModality || !reportingRegion) ? {opacity:.55,cursor:"not-allowed"} : {})} disabled={!reportingModality || !reportingRegion} onClick={function(){ launchPatientIntoReport(selectedReportingPatient, reportingModality, reportingRegion); }}>Open Patient & Study Page</button>
+                      <button style={Object.assign({}, btn(C.col), (!reportingModality || !reportingRegion) ? {opacity:.55,cursor:"not-allowed"} : {})} disabled={!reportingModality || !reportingRegion} onClick={function(){ launchPatientIntoReport(selectedReportingPatient, reportingModality, reportingRegion); }}>Open Report Editor</button>
                       <button style={obtn(C.col)} onClick={function(){ openPatientRegistry("reporting"); }}>Back to Registry</button>
                     </div>
                   </div>
@@ -7330,7 +7337,7 @@ function RadReport() {
           </div>
         </div>
         <div style={{display:"flex",justifyContent:"flex-end"}}>
-          <button style={btn(C.col)} disabled={!patient.name} onClick={function(){setStep("template");}}>Continue to Findings →</button>
+          <button style={btn(C.col)} disabled={!patient.name} onClick={function(){ setTemplateBackStep("patient"); setStep("template"); }}>Continue to Findings →</button>
         </div>
       </div>
     </div>
@@ -7341,7 +7348,7 @@ function RadReport() {
     <div style={{fontFamily:"'DM Sans',sans-serif",background:C.bg,minHeight:"100vh"}}>
       <style>{CSS}</style>
       <Toast msg={toast&&toast.msg} type={toast&&toast.type} onClose={function(){setToast(null);}} />
-      <AppHdr onBack backTo="patient" setStep={setStep} sub={modality+" › "+region+" › Findings"}
+      <AppHdr onBack backTo={templateBackStep || "patient"} setStep={setStep} sub={modality+" › "+region+" › Findings"}
         right={<div style={{display:"flex",gap:10,alignItems:"center"}}>
           <span style={{fontSize:12,color:"rgba(255,255,255,.5)"}}>{patient.name}</span>
           <button style={obtn("#fff")} onClick={function(){ setStep("drafts"); }}>Drafts</button>
@@ -7492,7 +7499,7 @@ function RadReport() {
         })}
 
         <div style={{display:"flex",justifyContent:"flex-end",gap:12}}>
-          <button style={obtn(C.soft)} onClick={function(){setStep("patient");}}>← Patient</button>
+          <button style={obtn(C.soft)} onClick={function(){ setStep(templateBackStep || "patient"); }}>{templateBackStep === "reporting" ? "← Reporting Queue" : "← Patient"}</button>
           <button style={btn(C.col)} onClick={function(){setStep("impression");}}>Next: Impression →</button>
         </div>
       </div>
