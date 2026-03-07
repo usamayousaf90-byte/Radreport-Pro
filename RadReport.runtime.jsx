@@ -3953,6 +3953,7 @@ function makeEmptyRegistryPatient() {
     phone: "",
     email: "",
     address: "",
+    refBy: "",
     studyDate: getTodayISO(),
     requestedModality: "",
     requestedRegion: ""
@@ -4027,6 +4028,7 @@ function normalizeRegistryPatient(rawPatient) {
   normalized.defaultPanel = String(normalized.defaultPanel || source.DefaultPanel || "").trim();
   normalized.phone = String(normalized.phone || source.Phone || "").trim();
   normalized.address = String(normalized.address || source.Address || "").trim();
+  normalized.refBy = String(normalized.refBy || source.RefBy || source.ReferredBy || source.Referral || "").trim();
   normalized.studyDate = String(normalized.studyDate || source.StudyDate || source.VisitDate || source.Date || getTodayISO()).trim() || getTodayISO();
   normalized.requestedModality = normalizeTemplateModality(normalized.requestedModality || source.RequestedModality || source.Modality || source.StudyModality || "");
   normalized.requestedRegion = matchRegionForModality(normalized.requestedModality, normalized.requestedRegion || source.RequestedRegion || source.Region || source.StudyRegion || "");
@@ -5657,6 +5659,7 @@ function RadReport() {
       next.phone = regPatient.phone || "";
       next.address = regPatient.address || "";
       next.defaultPanel = regPatient.defaultPanel || "";
+      next.refBy = regPatient.refBy || "";
       next.studyDate = regPatient.studyDate || prev.studyDate;
       return next;
     });
@@ -6947,7 +6950,7 @@ function RadReport() {
     return urgencyLabel === "Urgent" || urgencyLabel.indexOf("Critical") === 0;
   }).length;
   var homeQueueDate = getTodayISO();
-  var homePendingStudies = savedPatients.filter(function(item) {
+  var homeTodayStudies = savedPatients.filter(function(item) {
     return String(item && item.studyDate || "") === homeQueueDate;
   }).map(function(item) {
     var modalityKey = normalizeTemplateModality(item.requestedModality || "");
@@ -6956,12 +6959,14 @@ function RadReport() {
       patient: item,
       status: getReportingStudyStatus(item, modalityKey, regionKey, item.studyDate || homeQueueDate)
     };
-  }).filter(function(row) {
+  });
+  var homePendingStudies = homeTodayStudies.filter(function(row) {
     return row.status.label !== "Reported";
   });
   var homeOpenCount = homePendingStudies.length;
   var homePurePendingCount = homePendingStudies.filter(function(row) { return row.status.label === "Pending"; }).length;
   var homeIncompleteCount = homePendingStudies.filter(function(row) { return row.status.label === "Incomplete"; }).length;
+  var homeReportedCount = homeTodayStudies.filter(function(row) { return row.status.label === "Reported"; }).length;
   var homePendingBadge = (
     <button
       onClick={function(){ openReportingHub("home", "", "", null, homeQueueDate); }}
@@ -6998,7 +7003,7 @@ function RadReport() {
             <span style={{fontSize:12,color:"rgba(255,255,255,.76)"}}>for {homeQueueDate}</span>
           </div>
           <div style={{fontSize:11,color:"rgba(255,255,255,.6)",marginTop:4}}>
-            {homeIncompleteCount} incomplete draft{homeIncompleteCount === 1 ? "" : "s"} waiting to be finalized
+            {homeReportedCount} reported • {homeIncompleteCount} incomplete
           </div>
         </div>
       </div>
@@ -8651,8 +8656,8 @@ function RadReport() {
                 }} /></div>
                 <div><label style={lbl}>Cell</label><input className="ri" style={inp()} value={patientRegistryForm.cell} onChange={function(e){ setPatientRegistryField("cell", e.target.value); }} placeholder="Cell number" /></div>
                 <div><label style={lbl}>CNIC</label><input className="ri" style={inp()} value={patientRegistryForm.cnic} onChange={function(e){ setPatientRegistryField("cnic", e.target.value); }} placeholder="XXXXX-XXXXXXX-X" /></div>
+                <div><label style={lbl}>Referral</label><input className="ri" style={inp()} value={patientRegistryForm.refBy || ""} onChange={function(e){ setPatientRegistryField("refBy", e.target.value); }} placeholder="Dr. Name / Dept" /></div>
                 <div><label style={lbl}>Default Panel</label><input className="ri" style={inp()} value={patientRegistryForm.defaultPanel} onChange={function(e){ setPatientRegistryField("defaultPanel", e.target.value); }} placeholder="Default panel" /></div>
-                <div><label style={lbl}>Phone</label><input className="ri" style={inp()} value={patientRegistryForm.phone} onChange={function(e){ setPatientRegistryField("phone", e.target.value); }} placeholder="Phone" /></div>
                 <div style={{gridColumn:"1/-1"}}><label style={lbl}>Address</label><textarea className="ri" style={ta({minHeight:74})} value={patientRegistryForm.address} onChange={function(e){ setPatientRegistryField("address", e.target.value); }} placeholder="Address" /></div>
               </div>
               <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:14}}>
