@@ -4407,6 +4407,35 @@ async function cloudLoginPatientPortal(username, password) {
   return data;
 }
 
+async function cloudResetPatientPortalPassword(username, password) {
+  var res = await fetch("/api/share", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "resetPortalPassword",
+      username: username || "",
+      password: password || ""
+    })
+  });
+  var data = await res.json().catch(function() { return {}; });
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Portal password reset failed");
+  return data;
+}
+
+async function cloudDisableSharedReport(token) {
+  var res = await fetch("/api/share", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "disableShare",
+      token: token || ""
+    })
+  });
+  var data = await res.json().catch(function() { return {}; });
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Unable to disable shared link");
+  return data;
+}
+
 async function cloudAuthenticateSharedReport(token, username, password) {
   var res = await fetch("/api/share", {
     method: "POST",
@@ -6559,6 +6588,105 @@ function RadReport() {
     showToast("Portal slip ready to print", "success");
   }, [patientRegistryForm, saveRegistryPatient, showToast]);
 
+  var resetPatientPortalPassword = useCallback(async function(rawPatient) {
+    var savedPatient = saveRegistryPatient(rawPatient || patientRegistryForm, true);
+    if (!savedPatient) return null;
+    var nextPassword = buildPortalPassword();
+    var nextPatient = normalizeRegistryPatient(Object.assign({}, savedPatient, {
+      portalUsername: savedPatient.portalUsername || buildPortalUsername(savedPatient, savedPatients, savedPatient.id),
+      portalPassword: nextPassword
+    }));
+
+    setSavedPatients(function(prev) {
+      var next = prev.slice();
+      var idx = next.findIndex(function(item) { return item && item.id === nextPatient.id; });
+      if (idx >= 0) next[idx] = Object.assign({}, next[idx], nextPatient);
+      else next.unshift(nextPatient);
+      next = next.map(normalizeRegistryPatient).sort(function(a, b) {
+        var aDate = String(a.studyDate || "");
+        var bDate = String(b.studyDate || "");
+        if (aDate !== bDate) return bDate.localeCompare(aDate);
+        return composeRegisteredPatientName(a).localeCompare(composeRegisteredPatientName(b));
+      });
+      persistAllPatients(next);
+      return next;
+    });
+
+    setSelectedRegistryPatientId(nextPatient.id);
+    setPatientRegistryForm(Object.assign({}, nextPatient));
+    setPatient(function(prev) {
+      var samePatient = prev && ((prev.registryPatientId && prev.registryPatientId === nextPatient.id) || (prev.mrno && nextPatient.mrno && prev.mrno === nextPatient.mrno));
+      if (!samePatient) return prev;
+      return Object.assign({}, prev, {
+        portalUsername: nextPatient.portalUsername,
+        portalPassword: nextPatient.portalPassword,
+        cell: nextPatient.cell || prev.cell,
+        fatherName: nextPatient.fatherName || prev.fatherName,
+        mrno: nextPatient.mrno || prev.mrno
+      });
+    });
+    setSavedRecords(function(prev) {
+      var changed = false;
+      var next = prev.map(function(record) {
+        var recordPatient = record && record.patient && typeof record.patient === "object" ? record.patient : {};
+        var samePatient = (recordPatient.registryPatientId && recordPatient.registryPatientId === nextPatient.id)
+          || (nextPatient.mrno && recordPatient.mrno && nextPatient.mrno === recordPatient.mrno)
+          || (nextPatient.portalUsername && recordPatient.portalUsername && nextPatient.portalUsername === recordPatient.portalUsername);
+        if (!samePatient) return record;
+        changed = true;
+        return Object.assign({}, record, {
+          patient: Object.assign({}, recordPatient, {
+            portalUsername: nextPatient.portalUsername,
+            portalPassword: nextPatient.portalPassword,
+            fatherName: nextPatient.fatherName || recordPatient.fatherName,
+            cell: nextPatient.cell || recordPatient.cell,
+            mrno: nextPatient.mrno || recordPatient.mrno
+          })
+        });
+      });
+      if (changed) persistAllRecords(next);
+      return next;
+    });
+
+    try {
+      await cloudResetPatientPortalPassword(nextPatient.portalUsername, nextPatient.portalPassword);
+      showToast("Portal password reset for " + (composeRegisteredPatientName(nextPatient) || nextPatient.mrno), "success");
+    } catch (e) {
+      showToast(e && e.message ? e.message : "Portal password reset failed", "error");
+    }
+    return nextPatient;
+  }, [patientRegistryForm, persistAllPatients, persistAllRecords, saveRegistryPatient, savedPatients, showToast]);
+
+  var disableSharedReportForRecord = useCallback(async function(sourceRecord) {
+    if (!sourceRecord || !sourceRecord.sharePortal || !sourceRecord.sharePortal.token) {
+      showToast("No active share link is attached to this report", "error");
+      return false;
+    }
+    var token = sourceRecord.sharePortal.token;
+    try {
+      await cloudDisableSharedReport(token);
+      setSavedRecords(function(prev) {
+        var next = prev.map(function(item) {
+          return item && item.id === sourceRecord.id
+            ? Object.assign({}, item, { sharePortal: null })
+            : item;
+        });
+        persistAllRecords(next);
+        return next;
+      });
+      setShareDialog(function(prev) {
+        return prev && prev.token === token
+          ? Object.assign({}, prev, { open: false, loading: false, error: "", url: "", qrUrl: "", expiresAt: "", token: "", title: "" })
+          : prev;
+      });
+      showToast("Share link disabled", "success");
+      return true;
+    } catch (e) {
+      showToast(e && e.message ? e.message : "Unable to disable share link", "error");
+      return false;
+    }
+  }, [persistAllRecords, showToast]);
+
   var finalizeReport = useCallback(function() {
     if (!canFinalize) {
       showToast("Only Admin/Radiologist can finalize", "error");
@@ -7499,6 +7627,8 @@ function RadReport() {
     return String((b && b.finalizedAt) || "").localeCompare(String((a && a.finalizedAt) || ""));
   });
   var selectedRecord = filteredRecords.find(function(record) { return record.id === selectedRecordId; }) || filteredRecords[0] || null;
+  var previewRecordId = selectedRecordId || makeRecordId(activeDraftId, patient, modality, region);
+  var previewSharedRecord = savedRecords.find(function(record) { return record && record.id === previewRecordId; }) || null;
   var analyticsPatients = savedPatients.filter(function(item) {
     return isDateWithinRange(item && item.studyDate, analyticsFilters.start, analyticsFilters.end);
   });
@@ -7654,6 +7784,9 @@ function RadReport() {
       </div>
     </button>
   );
+  var shareDialogRecord = shareDialog && shareDialog.token
+    ? savedRecords.find(function(record) { return record && record.sharePortal && record.sharePortal.token === shareDialog.token; }) || null
+    : null;
   var shareDialogNode = shareDialog.open ? (
     <div className="np" style={{position:"fixed",inset:0,zIndex:2500,background:"rgba(2,6,23,.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{width:"100%",maxWidth:720,background:"#fff",borderRadius:18,boxShadow:"0 28px 90px rgba(15,23,42,.35)",overflow:"hidden"}}>
@@ -7695,9 +7828,10 @@ function RadReport() {
                 <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                   <button style={btn(C.ok, "#fff")} onClick={function(){ window.open(shareDialog.url, "_blank", "noopener,noreferrer"); }}>Open Portal</button>
                   <button style={obtn(C.col)} onClick={function(){ window.open(shareDialog.qrUrl, "_blank", "noopener,noreferrer"); }}>Open QR Image</button>
+                  {shareDialogRecord && <button style={obtn(C.err)} onClick={function(){ disableSharedReportForRecord(shareDialogRecord); }}>Disable Link</button>}
                 </div>
                 <div style={{fontSize:12,color:C.soft,lineHeight:1.7}}>
-                  Anyone with this link can open the finalized report portal without logging in. The current share link expires on <b>{shareDialog.expiresAt ? new Date(shareDialog.expiresAt).toLocaleString() : "—"}</b>.
+                  This link opens the secure patient portal and still requires the patient portal username and password. The current share link expires on <b>{shareDialog.expiresAt ? new Date(shareDialog.expiresAt).toLocaleString() : "—"}</b>.
                 </div>
               </div>
               <div style={{padding:14,border:"1px solid "+C.bdr,borderRadius:16,background:"#F8FAFC",display:"grid",gap:10,justifyItems:"center"}}>
@@ -9508,10 +9642,12 @@ function RadReport() {
                       <button style={btn(C.col, "#fff")} onClick={function(){ loadRecordIntoWorkspace(selectedRecord, "preview"); }}>Open Preview</button>
                       <button style={obtn(C.col)} onClick={function(){ loadRecordIntoWorkspace(selectedRecord, "template"); }}>Load Into Editor</button>
                       <button style={obtn(C.ok)} onClick={function(){ openShareDialogForRecord(selectedRecord); }}>Share Link / QR</button>
+                      {selectedRecord.sharePortal && selectedRecord.sharePortal.token && <button style={obtn(C.err)} onClick={function(){ disableSharedReportForRecord(selectedRecord); }}>Disable Share Link</button>}
                     </div>
                     {selectedRecord.sharePortal && selectedRecord.sharePortal.url && (
                       <div style={{fontSize:11,color:C.soft,marginTop:12,lineHeight:1.7}}>
-                        Active share portal: <a href={selectedRecord.sharePortal.url} target="_blank" rel="noreferrer" style={{color:C.col,fontWeight:700}}>{selectedRecord.sharePortal.url}</a>
+                        Active share portal: <a href={selectedRecord.sharePortal.url} target="_blank" rel="noreferrer" style={{color:C.col,fontWeight:700}}>{selectedRecord.sharePortal.url}</a><br/>
+                        Patient portal login is still required to open the report.
                       </div>
                     )}
                   </div>
@@ -9646,6 +9782,7 @@ function RadReport() {
               <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:14}}>
                 <button style={btn(C.col)} onClick={function(){ saveRegistryPatient(); }}>Save Patient</button>
                 <button style={obtn(C.ok)} onClick={function(){ printPatientPortalSlip(); }}>Print Portal Slip</button>
+                <button style={Object.assign({}, obtn(C.warn), !portalPreviewPatient ? {opacity:.55,cursor:"not-allowed"} : {})} disabled={!portalPreviewPatient} onClick={function(){ resetPatientPortalPassword(portalPreviewPatient || patientRegistryForm); }}>Reset Portal Password</button>
                 <button style={Object.assign({}, obtn(C.col), (!patientRegistryForm.requestedModality || !patientRegistryForm.requestedRegion) ? {opacity:.55,cursor:"not-allowed"} : {})} disabled={!patientRegistryForm.requestedModality || !patientRegistryForm.requestedRegion} onClick={function(){
                   openReportingHub("registry", patientRegistryForm.requestedModality, patientRegistryForm.requestedRegion, selectedRegistryPatientId || null, patientRegistryForm.studyDate || getTodayISO());
                 }}>Go to Reporting</button>
@@ -9666,6 +9803,10 @@ function RadReport() {
                     </div>
                     <div style={{gridColumn:"1/-1",fontSize:12,color:C.soft}}>
                       Print the portal slip to give the patient their login and QR code.
+                    </div>
+                    <div style={{gridColumn:"1/-1",display:"flex",gap:10,flexWrap:"wrap"}}>
+                      <button style={obtn(C.ok)} onClick={function(){ printPatientPortalSlip(portalPreviewPatient); }}>Reprint Slip</button>
+                      <button style={obtn(C.warn)} onClick={function(){ resetPatientPortalPassword(portalPreviewPatient); }}>Reset Password</button>
                     </div>
                   </div>
                 </div>
@@ -9771,6 +9912,7 @@ function RadReport() {
             <button style={obtn("#fff")} onClick={function(){ var nm = window.prompt("Draft name", patient.name || "Untitled draft"); if (nm !== null) saveDraft(nm); }}>Save Draft</button>
             <button style={obtn("#fff")} onClick={function(){window.print();}}>🖨️ Print / PDF</button>
             <button style={Object.assign({}, obtn("#16A34A"), !finalizedMeta ? {opacity:.55,cursor:"not-allowed"} : {})} disabled={!finalizedMeta} onClick={shareCurrentPreview}>Share Link / QR</button>
+            {previewSharedRecord && previewSharedRecord.sharePortal && previewSharedRecord.sharePortal.token && <button style={obtn(C.err)} onClick={function(){ disableSharedReportForRecord(previewSharedRecord); }}>Disable Share</button>}
             <button style={obtn("#fff")} onClick={runFinalizeAudit}>Run QA</button>
             <button style={btn((canFinalize && patient.reportingDoc) ? C.ok : "#8CA3BF")} disabled={!canFinalize || !patient.reportingDoc} onClick={finalizeReport}>
               Finalize

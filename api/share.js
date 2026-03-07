@@ -56,6 +56,21 @@ async function loadPortalPayload(username) {
   }
 }
 
+async function saveSharedPayload(token, payload) {
+  if (!token) return;
+  await kvCmd(["SET", "rrp:share:" + token, JSON.stringify(payload)]);
+}
+
+async function savePortalPayload(username, payload) {
+  if (!username) return;
+  await kvCmd(["SET", "rrp:portal:" + username, JSON.stringify(payload)]);
+}
+
+async function deleteSharedPayload(token) {
+  if (!token) return;
+  await kvCmd(["DEL", "rrp:share:" + token]);
+}
+
 function normalizePortalUsername(value) {
   return String(value || "").trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "");
 }
@@ -160,6 +175,61 @@ module.exports = async function handler(req, res) {
         });
       }
 
+      if (action === "resetPortalPassword") {
+        var resetUsername = normalizePortalUsername(postBody.username || "");
+        var resetPassword = String(postBody.password || "").trim();
+        if (!resetUsername || !resetPassword) return bad(res, 400, "Portal username and new password are required");
+        var resetPortal = await loadPortalPayload(resetUsername);
+        if (!resetPortal) return bad(res, 404, "Patient portal was not found");
+        var resetReports = Array.isArray(resetPortal.reports) ? resetPortal.reports : [];
+        var nowReset = new Date().toISOString();
+        var nextReports = [];
+        for (var i = 0; i < resetReports.length; i += 1) {
+          var entry = resetReports[i];
+          if (!entry || !entry.token || isExpired(entry.expiresAt)) continue;
+          var sharedForReset = await loadSharedPayload(entry.token);
+          if (!sharedForReset || !sharedForReset.report) continue;
+          var sharedPatient = sharedForReset.report.patient && typeof sharedForReset.report.patient === "object" ? sharedForReset.report.patient : {};
+          sharedForReset.report.patient = Object.assign({}, sharedPatient, {
+            portalUsername: resetUsername,
+            portalPassword: resetPassword
+          });
+          sharedForReset.updatedAt = nowReset;
+          await saveSharedPayload(entry.token, sharedForReset);
+          nextReports.push(Object.assign({}, entry, { updatedAt: nowReset }));
+        }
+        resetPortal.password = resetPassword;
+        resetPortal.updatedAt = nowReset;
+        resetPortal.reports = nextReports;
+        await savePortalPayload(resetUsername, resetPortal);
+        return res.status(200).json({
+          ok: true,
+          username: resetUsername,
+          reportCount: nextReports.length,
+          updatedAt: nowReset
+        });
+      }
+
+      if (action === "disableShare") {
+        var disableToken = String(postBody.token || "").trim();
+        if (!disableToken) return bad(res, 400, "Missing share token");
+        var disablePayload = await loadSharedPayload(disableToken);
+        if (!disablePayload || !disablePayload.report) return bad(res, 404, "Shared report not found");
+        var disableCreds = getReportPortalCredentials(disablePayload.report);
+        if (disableCreds.username) {
+          var disablePortal = await loadPortalPayload(disableCreds.username);
+          if (disablePortal) {
+            disablePortal.reports = (Array.isArray(disablePortal.reports) ? disablePortal.reports : []).filter(function(entry) {
+              return entry && entry.token && entry.token !== disableToken;
+            });
+            disablePortal.updatedAt = new Date().toISOString();
+            await savePortalPayload(disableCreds.username, disablePortal);
+          }
+        }
+        await deleteSharedPayload(disableToken);
+        return res.status(200).json({ ok: true, token: disableToken });
+      }
+
       return bad(res, 400, "Unsupported share action");
     }
 
@@ -187,7 +257,7 @@ module.exports = async function handler(req, res) {
         expiresAt: expiresAt,
         report: report
       };
-      await kvCmd(["SET", "rrp:share:" + token, JSON.stringify(payload)]);
+      await saveSharedPayload(token, payload);
 
       var existingPortal = await loadPortalPayload(portalCreds.username);
       var existingReports = Array.isArray(existingPortal && existingPortal.reports) ? existingPortal.reports : [];
@@ -210,7 +280,7 @@ module.exports = async function handler(req, res) {
         },
         reports: nextReports
       };
-      await kvCmd(["SET", "rrp:portal:" + portalCreds.username, JSON.stringify(portalPayload)]);
+      await savePortalPayload(portalCreds.username, portalPayload);
 
       return res.status(200).json({
         ok: true,
