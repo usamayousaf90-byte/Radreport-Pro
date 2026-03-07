@@ -3791,6 +3791,29 @@ function getTodayISO() {
   return new Date().toISOString().split("T")[0];
 }
 
+var PATIENT_TITLE_OPTIONS = ["Mr", "Mrs", "Miss"];
+
+function getPatientTitleOptions(selectedTitle) {
+  var title = String(selectedTitle || "").trim();
+  return title && PATIENT_TITLE_OPTIONS.indexOf(title) === -1
+    ? [title].concat(PATIENT_TITLE_OPTIONS)
+    : PATIENT_TITLE_OPTIONS.slice();
+}
+
+function buildSequentialMrno(studyDate, existingPatients, currentId) {
+  var dateCode = String(studyDate || getTodayISO()).replace(/[^0-9]/g, "").slice(0, 6);
+  var prefix = "MR-" + (dateCode || getTodayISO().replace(/[^0-9]/g, "").slice(0, 6)) + "-";
+  var maxSeq = 0;
+  (Array.isArray(existingPatients) ? existingPatients : []).forEach(function(item) {
+    if (!item || (currentId && item.id === currentId)) return;
+    var mrno = String(item.mrno || "").trim().toUpperCase();
+    if (mrno.indexOf(prefix) !== 0) return;
+    var seq = parseInt(mrno.slice(prefix.length), 10);
+    if (Number.isFinite(seq)) maxSeq = Math.max(maxSeq, seq);
+  });
+  return prefix + String(maxSeq + 1).padStart(4, "0");
+}
+
 function makeEmptyRegistryPatient() {
   return {
     id: "",
@@ -3881,11 +3904,8 @@ function normalizeRegistryPatient(rawPatient) {
   normalized.cell = String(normalized.cell || source.Cell || "").trim();
   normalized.cnic = String(normalized.cnic || source.CNIC || "").trim();
   normalized.fatherName = String(normalized.fatherName || source.FatherName || source.FatherHusbandName || "").trim();
-  normalized.whatsAppNo = String(normalized.whatsAppNo || source.WhatsAppNo || source.WhatsappNo || "").trim();
-  normalized.passport = String(normalized.passport || source.Passport || "").trim();
   normalized.defaultPanel = String(normalized.defaultPanel || source.DefaultPanel || "").trim();
   normalized.phone = String(normalized.phone || source.Phone || "").trim();
-  normalized.email = String(normalized.email || source.Email || "").trim();
   normalized.address = String(normalized.address || source.Address || "").trim();
   normalized.studyDate = String(normalized.studyDate || source.StudyDate || source.VisitDate || source.Date || getTodayISO()).trim() || getTodayISO();
   normalized.requestedModality = normalizeTemplateModality(normalized.requestedModality || source.RequestedModality || source.Modality || source.StudyModality || "");
@@ -5456,10 +5476,7 @@ function RadReport() {
       next.cnic = regPatient.cnic || "";
       next.fatherName = regPatient.fatherName || "";
       next.phone = regPatient.phone || "";
-      next.email = regPatient.email || "";
       next.address = regPatient.address || "";
-      next.whatsAppNo = regPatient.whatsAppNo || "";
-      next.passport = regPatient.passport || "";
       next.defaultPanel = regPatient.defaultPanel || "";
       next.studyDate = regPatient.studyDate || prev.studyDate;
       return next;
@@ -5532,6 +5549,7 @@ function RadReport() {
     }
     setSavedPatients(function(prev) {
       var next = prev.slice();
+      if (!regPatient.mrno) regPatient.mrno = buildSequentialMrno(regPatient.studyDate, prev, regPatient.id);
       var idx = next.findIndex(function(item) {
         if (regPatient.id && item.id === regPatient.id) return true;
         var sameStudy = (item.studyDate || "") === regPatient.studyDate && (item.requestedModality || "") === regPatient.requestedModality && (item.requestedRegion || "") === regPatient.requestedRegion;
@@ -5555,7 +5573,7 @@ function RadReport() {
     });
     setSelectedRegistryPatientId(regPatient.id);
     setPatientRegistryForm(makeEmptyRegistryPatient());
-    if (!quiet) showToast("Patient saved in registry", "success");
+    if (!quiet) showToast("Patient saved in registry: " + regPatient.mrno, "success");
     return regPatient.id;
   }, [authUser, patientRegistryForm, persistAllPatients, showToast]);
 
@@ -6417,7 +6435,6 @@ function RadReport() {
       item.gender || "",
       item.cell || "",
       item.cnic || "",
-      item.email || "",
       item.defaultPanel || ""
     ].join(" ").toLowerCase();
     return hay.indexOf(patientRegistryQ) !== -1;
@@ -6450,7 +6467,7 @@ function RadReport() {
     if (aRegion !== bRegion) return aRegion.localeCompare(bRegion);
     return composeRegisteredPatientName(a).localeCompare(composeRegisteredPatientName(b));
   });
-  var selectedReportingPatient = filteredReportingPatients.find(function(item) { return item.id === selectedReportingPatientId; }) || savedPatients.find(function(item) { return item.id === selectedReportingPatientId; }) || filteredReportingPatients[0] || null;
+  var selectedReportingPatient = filteredReportingPatients.find(function(item) { return item.id === selectedReportingPatientId; }) || filteredReportingPatients[0] || null;
   var recordQ = recordQuery.trim().toLowerCase();
   var filteredRecords = savedRecords.filter(function(record) {
     var recordDate = getRecordDateISO(record);
@@ -7252,9 +7269,27 @@ function RadReport() {
         </div>
         <div style={crd}>
           <div style={cHd(C.col)}><span style={{fontSize:20}}>👤</span><b style={{color:C.navy,fontSize:15}}>Patient & Study Information</b></div>
-          <div style={{padding:20,display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-            <div><label style={lbl}>MRNO</label><input className="ri" style={inp()} placeholder="Medical record number" value={patient.mrno || ""} onChange={function(e){setPatient(function(p){return Object.assign({},p,{mrno:e.target.value});});}} /></div>
-            <div><label style={lbl}>Title</label><input className="ri" style={inp()} placeholder="Mr / Mrs / Dr" value={patient.title || ""} onChange={function(e){setPatient(function(p){return Object.assign({},p,{title:e.target.value});});}} /></div>
+          <div style={{padding:20,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:16}}>
+            <div>
+              <label style={lbl}>MRNO</label>
+              <div style={{display:"flex",gap:8}}>
+                <input className="ri" style={inp()} placeholder="Auto-generated on registry save" value={patient.mrno || ""} onChange={function(e){setPatient(function(p){return Object.assign({},p,{mrno:e.target.value});});}} />
+                <button type="button" style={obtn(C.col)} onClick={function(){
+                  setPatient(function(prev){
+                    return Object.assign({}, prev, { mrno: buildSequentialMrno(prev.studyDate || getTodayISO(), savedPatients, prev.registryPatientId || null) });
+                  });
+                }}>Auto</button>
+              </div>
+            </div>
+            <div>
+              <label style={lbl}>Title</label>
+              <select className="ri" style={inp({cursor:"pointer"})} value={patient.title || ""} onChange={function(e){setPatient(function(p){return Object.assign({},p,{title:e.target.value});});}}>
+                <option value="">Select title</option>
+                {getPatientTitleOptions(patient.title).map(function(name) {
+                  return <option key={name} value={name}>{name}</option>;
+                })}
+              </select>
+            </div>
             <div><label style={lbl}>Patient Name</label><input className="ri" style={inp()} placeholder="Full name" value={patient.name} onChange={function(e){setPatient(function(p){return Object.assign({},p,{name:e.target.value});});}} /></div>
             <div><label style={lbl}>Father / Husband</label><input className="ri" style={inp()} placeholder="Father / Husband name" value={patient.fatherName || ""} onChange={function(e){setPatient(function(p){return Object.assign({},p,{fatherName:e.target.value});});}} /></div>
             <div><label style={lbl}>Age</label><input className="ri" style={inp()} placeholder="e.g. 45 yrs" value={patient.age} onChange={function(e){setPatient(function(p){return Object.assign({},p,{age:e.target.value});});}} /></div>
@@ -7273,10 +7308,7 @@ function RadReport() {
             }} /></div>
             <div><label style={lbl}>Cell</label><input className="ri" style={inp()} placeholder="Cell number" value={patient.cell || ""} onChange={function(e){setPatient(function(p){return Object.assign({},p,{cell:e.target.value});});}} /></div>
             <div><label style={lbl}>CNIC</label><input className="ri" style={inp()} placeholder="XXXXX-XXXXXXX-X" value={patient.cnic || ""} onChange={function(e){setPatient(function(p){return Object.assign({},p,{cnic:e.target.value});});}} /></div>
-            <div><label style={lbl}>WhatsApp</label><input className="ri" style={inp()} placeholder="WhatsApp number" value={patient.whatsAppNo || ""} onChange={function(e){setPatient(function(p){return Object.assign({},p,{whatsAppNo:e.target.value});});}} /></div>
             <div><label style={lbl}>Phone</label><input className="ri" style={inp()} placeholder="Phone" value={patient.phone || ""} onChange={function(e){setPatient(function(p){return Object.assign({},p,{phone:e.target.value});});}} /></div>
-            <div><label style={lbl}>Email</label><input className="ri" style={inp()} placeholder="Email" value={patient.email || ""} onChange={function(e){setPatient(function(p){return Object.assign({},p,{email:e.target.value});});}} /></div>
-            <div><label style={lbl}>Passport</label><input className="ri" style={inp()} placeholder="Passport no" value={patient.passport || ""} onChange={function(e){setPatient(function(p){return Object.assign({},p,{passport:e.target.value});});}} /></div>
             <div><label style={lbl}>Default Panel</label><input className="ri" style={inp()} placeholder="Default panel" value={patient.defaultPanel || ""} onChange={function(e){setPatient(function(p){return Object.assign({},p,{defaultPanel:e.target.value});});}} /></div>
             <div><label style={lbl}>Study Date</label><input className="ri" type="date" style={inp()} value={patient.studyDate} onChange={function(e){setPatient(function(p){return Object.assign({},p,{studyDate:e.target.value});});}} /></div>
             <div><label style={lbl}>Referred By</label><input className="ri" style={inp()} placeholder="Dr. Name / Dept" value={patient.refBy} onChange={function(e){setPatient(function(p){return Object.assign({},p,{refBy:e.target.value});});}} /></div>
@@ -7782,7 +7814,7 @@ function RadReport() {
           <div style={crd}>
             <div style={cHd("#0EA5E9")}><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:C.navy}}>Register / Update Patient</span></div>
             <div style={{padding:18}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10}}>
                 <div><label style={lbl}>Study Date</label><input className="ri" type="date" style={inp()} value={patientRegistryForm.studyDate || ""} onChange={function(e){ setPatientRegistryField("studyDate", e.target.value); }} /></div>
                 <div><label style={lbl}>Modality</label><select className="ri" style={inp({cursor:"pointer"})} value={patientRegistryForm.requestedModality || ""} onChange={function(e){
                   var nextModality = e.target.value;
@@ -7793,10 +7825,27 @@ function RadReport() {
                   });
                 }}><option value="">Select modality</option>{modalityEntries.map(function(entry){ return <option key={entry[0]} value={entry[0]}>{entry[0]}</option>; })}</select></div>
                 <div><label style={lbl}>Region</label><select className="ri" style={inp({cursor:"pointer",opacity:patientRegistryForm.requestedModality ? 1 : .65})} value={patientRegistryForm.requestedRegion || ""} onChange={function(e){ setPatientRegistryField("requestedRegion", e.target.value); }} disabled={!patientRegistryForm.requestedModality}><option value="">{patientRegistryForm.requestedModality ? "Select region" : "Select modality first"}</option>{(patientRegistryForm.requestedModality && T[patientRegistryForm.requestedModality] ? T[patientRegistryForm.requestedModality].regions : []).map(function(name){ return <option key={name} value={name}>{name}</option>; })}</select></div>
-                <div><label style={lbl}>MRNO</label><input className="ri" style={inp()} value={patientRegistryForm.mrno} onChange={function(e){ setPatientRegistryField("mrno", e.target.value); }} placeholder="Medical record number" /></div>
-                <div><label style={lbl}>Title</label><input className="ri" style={inp()} value={patientRegistryForm.title} onChange={function(e){ setPatientRegistryField("title", e.target.value); }} placeholder="Mr / Mrs / Dr" /></div>
+                <div>
+                  <label style={lbl}>MRNO</label>
+                  <div style={{display:"flex",gap:8}}>
+                    <input className="ri" style={inp()} value={patientRegistryForm.mrno} onChange={function(e){ setPatientRegistryField("mrno", e.target.value); }} placeholder="Auto-generated if left blank" />
+                    <button type="button" style={obtn(C.col)} onClick={function(){
+                      setPatientRegistryField("mrno", buildSequentialMrno(patientRegistryForm.studyDate || getTodayISO(), savedPatients, selectedRegistryPatientId || patientRegistryForm.id || null));
+                    }}>Auto</button>
+                  </div>
+                </div>
+                <div>
+                  <label style={lbl}>Title</label>
+                  <select className="ri" style={inp({cursor:"pointer"})} value={patientRegistryForm.title || ""} onChange={function(e){ setPatientRegistryField("title", e.target.value); }}>
+                    <option value="">Select title</option>
+                    {getPatientTitleOptions(patientRegistryForm.title).map(function(name) {
+                      return <option key={name} value={name}>{name}</option>;
+                    })}
+                  </select>
+                </div>
                 <div><label style={lbl}>First Name</label><input className="ri" style={inp()} value={patientRegistryForm.firstName} onChange={function(e){ setPatientRegistryField("firstName", e.target.value); }} placeholder="First name" /></div>
                 <div><label style={lbl}>Last Name</label><input className="ri" style={inp()} value={patientRegistryForm.lastName} onChange={function(e){ setPatientRegistryField("lastName", e.target.value); }} placeholder="Last name" /></div>
+                <div><label style={lbl}>Father / Husband</label><input className="ri" style={inp()} value={patientRegistryForm.fatherName} onChange={function(e){ setPatientRegistryField("fatherName", e.target.value); }} placeholder="Father / Husband name" /></div>
                 <div><label style={lbl}>Gender</label><select className="ri" style={inp({cursor:"pointer"})} value={patientRegistryForm.gender} onChange={function(e){ setPatientRegistryField("gender", e.target.value); }}><option>Male</option><option>Female</option><option>Children</option><option>N/A</option><option>Unknown</option></select></div>
                 <div><label style={lbl}>Age</label><input className="ri" style={inp()} value={patientRegistryForm.age || ""} onChange={function(e){ setPatientRegistryField("age", e.target.value); }} placeholder="e.g. 45 yrs" /></div>
                 <div><label style={lbl}>Date of Birth</label><input className="ri" type="date" style={inp()} value={patientRegistryForm.dob} onChange={function(e){
@@ -7810,12 +7859,8 @@ function RadReport() {
                 }} /></div>
                 <div><label style={lbl}>Cell</label><input className="ri" style={inp()} value={patientRegistryForm.cell} onChange={function(e){ setPatientRegistryField("cell", e.target.value); }} placeholder="Cell number" /></div>
                 <div><label style={lbl}>CNIC</label><input className="ri" style={inp()} value={patientRegistryForm.cnic} onChange={function(e){ setPatientRegistryField("cnic", e.target.value); }} placeholder="XXXXX-XXXXXXX-X" /></div>
-                <div><label style={lbl}>Father / Husband</label><input className="ri" style={inp()} value={patientRegistryForm.fatherName} onChange={function(e){ setPatientRegistryField("fatherName", e.target.value); }} placeholder="Father / Husband name" /></div>
-                <div><label style={lbl}>WhatsApp</label><input className="ri" style={inp()} value={patientRegistryForm.whatsAppNo} onChange={function(e){ setPatientRegistryField("whatsAppNo", e.target.value); }} placeholder="WhatsApp no" /></div>
-                <div><label style={lbl}>Passport</label><input className="ri" style={inp()} value={patientRegistryForm.passport} onChange={function(e){ setPatientRegistryField("passport", e.target.value); }} placeholder="Passport no" /></div>
                 <div><label style={lbl}>Default Panel</label><input className="ri" style={inp()} value={patientRegistryForm.defaultPanel} onChange={function(e){ setPatientRegistryField("defaultPanel", e.target.value); }} placeholder="Default panel" /></div>
                 <div><label style={lbl}>Phone</label><input className="ri" style={inp()} value={patientRegistryForm.phone} onChange={function(e){ setPatientRegistryField("phone", e.target.value); }} placeholder="Phone" /></div>
-                <div><label style={lbl}>Email</label><input className="ri" style={inp()} value={patientRegistryForm.email} onChange={function(e){ setPatientRegistryField("email", e.target.value); }} placeholder="Email" /></div>
                 <div style={{gridColumn:"1/-1"}}><label style={lbl}>Address</label><textarea className="ri" style={ta({minHeight:74})} value={patientRegistryForm.address} onChange={function(e){ setPatientRegistryField("address", e.target.value); }} placeholder="Address" /></div>
               </div>
               <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:14}}>
